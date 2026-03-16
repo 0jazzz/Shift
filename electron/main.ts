@@ -22,6 +22,7 @@ async function createWindow() {
         height: 800,
         frame: false,
         backgroundColor: '#0A0A0A',
+        icon: join(process.env.VITE_PUBLIC!, 'icon.ico'),
         webPreferences: {
             preload,
             nodeIntegration: false,

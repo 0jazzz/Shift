@@ -166,7 +166,7 @@ export default function ArchivePanel() {
                                     <span className="text-sm">No conversion history found.</span>
                                 </div>
                             ) : (
-                                displayList.map((item, index) => {
+                                displayList.map((item) => {
                                     if ('isBatch' in item) {
                                         // Batch Rendering
                                         const isExpanded = expandedBatches.has(item.sessionId)

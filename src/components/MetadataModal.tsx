@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { motion } from 'framer-motion'
-import { X, Save, Disc, Loader2, Music } from 'lucide-react'
+import { X, Save, Disc, Loader2 } from 'lucide-react'
 import { useAppStore } from '../store/appStore'
 
 interface FileMetadata {
@@ -46,22 +46,6 @@ const getFileCategory = (filePath: string): FileCategory => {
     return 'other'
 }
 
-const getStandardKeys = (category: FileCategory): string[] => {
-    if (category === 'audio') {
-        return ['title', 'artist', 'album', 'albumArtist', 'composer', 'year', 'track', 'genre', 'comment', 'lyrics', 'copyright', 'encoder', 'fileName', 'fileType', 'fileExt', 'mimeType', 'fileSize', 'fileCreated', 'fileModified']
-    }
-    if (category === 'document') {
-        return ['title', 'author', 'subject', 'keywords', 'description', 'creator', 'producer', 'comment', 'created', 'modified', 'pageCount', 'fileName', 'fileType', 'fileExt', 'mimeType', 'fileSize', 'fileCreated', 'fileModified']
-    }
-    if (category === 'video') {
-        return ['title', 'author', 'creator', 'year', 'genre', 'description', 'comment', 'copyright', 'encoder', 'producer', 'fileName', 'fileType', 'fileExt', 'mimeType', 'fileSize', 'fileCreated', 'fileModified']
-    }
-    if (category === 'image') {
-        return ['title', 'artist', 'creator', 'description', 'comment', 'copyright', 'fileName', 'fileType', 'fileExt', 'mimeType', 'fileSize', 'fileCreated', 'fileModified']
-    }
-    return ['title', 'author', 'description', 'comment', 'keywords', 'creator', 'producer', 'copyright', 'created', 'modified', 'pageCount', 'fileName', 'fileType', 'fileExt', 'mimeType', 'fileSize', 'fileCreated', 'fileModified']
-}
-
 export default function MetadataModal() {
     const { tasks, editingTaskId, setEditingTask, updateTask, addLog } = useAppStore()
     const task = tasks.find(t => t.id === editingTaskId)
@@ -71,12 +55,14 @@ export default function MetadataModal() {
     const [isLoading, setIsLoading] = useState(true)
     const [isSaving, setIsSaving] = useState(false)
     const [saveMode, setSaveMode] = useState<'original' | 'conversion' | null>(null)
+    const [tagSearch, setTagSearch] = useState('')
 
     useEffect(() => {
         if (!task || !window.electron?.invoke) return
 
         let mounted = true
         setIsLoading(true)
+        setTagSearch('')
 
         // Load existing metadata from file
         window.electron.invoke('readMetadata', task.file.path)
@@ -116,7 +102,7 @@ export default function MetadataModal() {
         const clean: Record<string, string> = {}
         Object.entries(metadata).forEach(([key, value]) => {
             if (value !== undefined && value !== null) {
-                if (!READ_ONLY_KEYS.has(key)) {
+                if (!isReadOnlyKey(key)) {
                     clean[key] = value
                 }
             }
@@ -177,7 +163,6 @@ export default function MetadataModal() {
     }
 
     const fileCategory = getFileCategory(task.file.path || task.file.name)
-    const STANDARD_KEYS = getStandardKeys(fileCategory)
     const READ_ONLY_KEYS = new Set([
         'fileName',
         'fileType',
@@ -189,15 +174,51 @@ export default function MetadataModal() {
         'pageCount'
     ])
 
-    // Helper to get non-standard keys
-    const getExtendedKeys = () => {
-        return Object.keys(metadata).filter(k =>
-            !STANDARD_KEYS.includes(k) &&
-            metadata[k] !== undefined
-        )
+    const isReadOnlyKey = (key: string) => {
+        if (READ_ONLY_KEYS.has(key)) return true
+        if (key === 'SourceFile') return true
+        if (key.startsWith('File:')) return true
+        if (key.startsWith('System:')) return true
+        if (key.startsWith('Composite:')) return true
+        if (key.startsWith('ExifTool:')) return true
+        return false
+    }
+
+    const getAllTagEntries = () => {
+        const entries = Object.keys(metadata)
+            .filter(k => metadata[k] !== undefined)
+            .map(k => {
+                const hasGroup = k.includes(':')
+                const parts = k.split(':')
+                const group = hasGroup ? parts[0] : 'General'
+                const name = hasGroup ? parts.slice(1).join(':') : k
+                return {
+                    key: k,
+                    group,
+                    name,
+                    value: metadata[k] || ''
+                }
+            })
+
+        const search = tagSearch.trim().toLowerCase()
+        const filtered = search.length === 0
+            ? entries
+            : entries.filter(e =>
+                e.key.toLowerCase().includes(search) ||
+                e.group.toLowerCase().includes(search) ||
+                e.name.toLowerCase().includes(search) ||
+                (e.value || '').toLowerCase().includes(search)
+            )
+
+        return filtered.sort((a, b) => {
+            const g = a.group.localeCompare(b.group)
+            if (g !== 0) return g
+            return a.name.localeCompare(b.name)
+        })
     }
 
     const handleExtendedChange = (oldKey: string, newKey: string, newValue: string) => {
+        if (isReadOnlyKey(oldKey)) return
         setMetadata(prev => {
             const next = { ...prev }
             if (oldKey !== newKey) {
@@ -209,6 +230,7 @@ export default function MetadataModal() {
     }
 
     const handleDeleteTag = (key: string) => {
+        if (isReadOnlyKey(key)) return
         setMetadata(prev => {
             const next = { ...prev }
             delete next[key]
@@ -590,49 +612,83 @@ export default function MetadataModal() {
                                 </div>
                             </div>
 
-                            {/* Extended/Custom Tags Section */}
+                            {/* All Tags Section */}
                             <div className="space-y-4 pt-4 border-t border-white/5">
-                                <div className="flex items-center justify-between px-1">
-                                    <h3 className="text-xs font-bold text-white/40 uppercase tracking-widest">Extended Tags</h3>
-                                    <button
-                                        onClick={handleAddTag}
-                                        className="text-[10px] font-bold text-white bg-white/10 hover:bg-white/20 px-2 py-1 rounded transition-colors"
-                                    >
-                                        + ADD TAG
-                                    </button>
+                                <div className="flex flex-col gap-3 px-1">
+                                    <div className="flex items-center justify-between">
+                                        <h3 className="text-xs font-bold text-white/40 uppercase tracking-widest">All Metadata</h3>
+                                        <button
+                                            onClick={handleAddTag}
+                                            className="text-[10px] font-bold text-white bg-white/10 hover:bg-white/20 px-2 py-1 rounded transition-colors"
+                                        >
+                                            + ADD TAG
+                                        </button>
+                                    </div>
+                                    <input
+                                        type="text"
+                                        value={tagSearch}
+                                        onChange={(e) => setTagSearch(e.target.value)}
+                                        placeholder="Search tags, groups, or values..."
+                                        className="w-full bg-[#0a0a0a] border border-neutral-800 rounded-lg px-3 py-2 text-xs text-neutral-300 placeholder-neutral-600 focus:outline-none focus:border-neutral-600 transition-all"
+                                    />
                                 </div>
 
                                 <div className="space-y-3">
-                                    {getExtendedKeys().length === 0 ? (
+                                    {getAllTagEntries().length === 0 ? (
                                         <div className="text-center py-4 text-neutral-600 text-xs italic border border-white/5 rounded-lg border-dashed">
-                                            No extended tags found.
+                                            No metadata found.
                                         </div>
                                     ) : (
-                                        getExtendedKeys().map((key, idx) => (
-                                            <div key={`${key}-${idx}`} className="flex gap-2 group">
-                                                <input
-                                                    type="text"
-                                                    value={key}
-                                                    onChange={(e) => handleExtendedChange(key, e.target.value, metadata[key] || '')}
-                                                    className="w-1/3 bg-[#0a0a0a] border border-neutral-800 rounded-lg px-3 py-2 text-xs text-neutral-400 font-mono focus:outline-none focus:border-white/20 transition-all"
-                                                    placeholder="KEY"
-                                                />
-                                                <input
-                                                    type="text"
-                                                    value={metadata[key] || ''}
-                                                    onChange={(e) => handleExtendedChange(key, key, e.target.value)}
-                                                    className="flex-1 bg-[#0a0a0a] border border-neutral-800 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-white/20 transition-all"
-                                                    placeholder="Value"
-                                                />
-                                                <button
-                                                    onClick={() => handleDeleteTag(key)}
-                                                    className="p-2 text-neutral-600 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors opacity-0 group-hover:opacity-100"
-                                                    title="Remove Tag"
-                                                >
-                                                    <X className="w-4 h-4" />
-                                                </button>
-                                            </div>
-                                        ))
+                                        getAllTagEntries().map((entry, idx) => {
+                                            const isReadOnly = isReadOnlyKey(entry.key)
+                                            const useTextarea = (entry.value || '').length > 120 || (entry.value || '').includes('\n')
+                                            return (
+                                                <div key={`${entry.key}-${idx}`} className={`flex gap-2 group ${isReadOnly ? 'opacity-80' : ''}`}>
+                                                    <div className="w-20 shrink-0 text-[10px] uppercase tracking-widest text-neutral-600 pt-2">
+                                                        {entry.group}
+                                                    </div>
+                                                    <input
+                                                        type="text"
+                                                        value={entry.key}
+                                                        readOnly={isReadOnly}
+                                                        onChange={(e) => handleExtendedChange(entry.key, e.target.value, entry.value)}
+                                                        className={`w-1/3 bg-[#0a0a0a] border border-neutral-800 rounded-lg px-3 py-2 text-xs font-mono focus:outline-none transition-all
+                                                        ${isReadOnly ? 'text-neutral-500' : 'text-neutral-300 focus:border-white/20'}`}
+                                                        placeholder="KEY"
+                                                    />
+                                                    {useTextarea ? (
+                                                        <textarea
+                                                            value={entry.value}
+                                                            readOnly={isReadOnly}
+                                                            onChange={(e) => handleExtendedChange(entry.key, entry.key, e.target.value)}
+                                                            className={`flex-1 bg-[#0a0a0a] border border-neutral-800 rounded-lg px-3 py-2 text-xs text-white focus:outline-none transition-all resize-none
+                                                            ${isReadOnly ? 'text-neutral-500' : 'focus:border-white/20'}`}
+                                                            rows={3}
+                                                            placeholder="Value"
+                                                        />
+                                                    ) : (
+                                                        <input
+                                                            type="text"
+                                                            value={entry.value}
+                                                            readOnly={isReadOnly}
+                                                            onChange={(e) => handleExtendedChange(entry.key, entry.key, e.target.value)}
+                                                            className={`flex-1 bg-[#0a0a0a] border border-neutral-800 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-white/20 transition-all
+                                                            ${isReadOnly ? 'text-neutral-500' : ''}`}
+                                                            placeholder="Value"
+                                                        />
+                                                    )}
+                                                    <button
+                                                        onClick={() => handleDeleteTag(entry.key)}
+                                                        disabled={isReadOnly}
+                                                        className={`p-2 rounded-lg transition-colors opacity-0 group-hover:opacity-100
+                                                        ${isReadOnly ? 'text-neutral-700 cursor-not-allowed' : 'text-neutral-600 hover:text-red-400 hover:bg-red-500/10'}`}
+                                                        title={isReadOnly ? 'Read-only tag' : 'Remove Tag'}
+                                                    >
+                                                        <X className="w-4 h-4" />
+                                                    </button>
+                                                </div>
+                                            )
+                                        })
                                     )}
                                 </div>
                             </div>

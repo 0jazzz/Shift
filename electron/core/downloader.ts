@@ -343,67 +343,75 @@ function fetchTextWithRedirects(url: string, maxRedirects = 10): Promise<string>
 }
 
 async function fetchLatestExifToolUrl(): Promise<string> {
-    const indexUrl = 'https://exiftool.org/'
-    const html = await fetchTextWithRedirects(indexUrl)
+    const fallbackUrl = 'https://sourceforge.net/projects/exiftool/files/exiftool-13.52_64.zip/download';
 
-    const hrefRegex = /href\s*=\s*["']([^"']*exiftool-[^"']*\.zip[^"']*)["']/gi
-    const found: string[] = []
-    let match: RegExpExecArray | null = null
-    while ((match = hrefRegex.exec(html)) !== null) {
-        found.push(match[1])
-    }
+    try {
+        const indexUrl = 'https://exiftool.org/'
+        const html = await fetchTextWithRedirects(indexUrl)
 
-    if (found.length === 0) {
-        throw new Error('Could not find ExifTool zip in directory listing')
-    }
-
-    const normalizeUrl = (href: string) => {
-        if (href.startsWith('http')) return href
-        return new URL(href, indexUrl).toString()
-    }
-
-    const candidates = found
-        .map(normalizeUrl)
-        .filter(url => /exiftool-\d+(?:\.\d+)+(?:_\d+)?\.zip/i.test(url))
-
-    if (candidates.length === 0) {
-        throw new Error('Could not find ExifTool zip in directory listing')
-    }
-
-    const extractVersion = (url: string) => {
-        const verMatch = url.match(/exiftool-(\d+(?:\.\d+)+)(?:_\d+)?\.zip/i)
-        return verMatch ? verMatch[1] : '0'
-    }
-
-    const compareVersions = (a: string, b: string) => {
-        const pa = a.split('.').map(n => parseInt(n, 10))
-        const pb = b.split('.').map(n => parseInt(n, 10))
-        const len = Math.max(pa.length, pb.length)
-        for (let i = 0; i < len; i++) {
-            const na = pa[i] || 0
-            const nb = pb[i] || 0
-            if (na > nb) return 1
-            if (na < nb) return -1
+        const hrefRegex = /href\s*=\s*["']([^"']*exiftool-[^"']*\.zip[^"']*)["']/gi
+        const found: string[] = []
+        let match: RegExpExecArray | null = null
+        while ((match = hrefRegex.exec(html)) !== null) {
+            found.push(match[1])
         }
-        return 0
+
+        if (found.length === 0) {
+            console.warn('Could not find ExifTool zip in directory listing, using fallback')
+            return fallbackUrl;
+        }
+
+        const normalizeUrl = (href: string) => {
+            if (href.startsWith('http')) return href
+            return new URL(href, indexUrl).toString()
+        }
+
+        const candidates = found
+            .map(normalizeUrl)
+            .filter(url => /exiftool-\d+(?:\.\d+)+(?:_\d+)?\.zip/i.test(url))
+
+        if (candidates.length === 0) {
+            return fallbackUrl;
+        }
+
+        const extractVersion = (url: string) => {
+            const verMatch = url.match(/exiftool-(\d+(?:\.\d+)+)(?:_\d+)?\.zip/i)
+            return verMatch ? verMatch[1] : '0'
+        }
+
+        const compareVersions = (a: string, b: string) => {
+            const pa = a.split('.').map(n => parseInt(n, 10))
+            const pb = b.split('.').map(n => parseInt(n, 10))
+            const len = Math.max(pa.length, pb.length)
+            for (let i = 0; i < len; i++) {
+                const na = pa[i] || 0
+                const nb = pb[i] || 0
+                if (na > nb) return 1
+                if (na < nb) return -1
+            }
+            return 0
+        }
+
+        const prefer64 = process.arch === 'x64'
+        const archCandidates = candidates.filter(url =>
+            prefer64 ? /_64\.zip/i.test(url) : /_32\.zip/i.test(url)
+        )
+        const pickFrom = archCandidates.length > 0 ? archCandidates : candidates
+
+        const latest = pickFrom
+            .map(url => ({ url, ver: extractVersion(url) }))
+            .sort((a, b) => compareVersions(a.ver, b.ver))
+            .pop()
+
+        if (!latest) {
+            return fallbackUrl;
+        }
+
+        return latest.url
+    } catch (err) {
+        console.warn('Error fetching latest ExifTool URL, using fallback:', err);
+        return fallbackUrl;
     }
-
-    const prefer64 = process.arch === 'x64'
-    const archCandidates = candidates.filter(url =>
-        prefer64 ? /_64\.zip/i.test(url) : /_32\.zip/i.test(url)
-    )
-    const pickFrom = archCandidates.length > 0 ? archCandidates : candidates
-
-    const latest = pickFrom
-        .map(url => ({ url, ver: extractVersion(url) }))
-        .sort((a, b) => compareVersions(a.ver, b.ver))
-        .pop()
-
-    if (!latest) {
-        throw new Error('Failed to determine latest ExifTool version')
-    }
-
-    return latest.url
 }
 
 export async function downloadDependency(
@@ -519,12 +527,68 @@ export async function downloadDependency(
             await extractZip(filePath, binDir, config.extractPath || undefined, name)
         }
 
-        // ExifTool on Windows ships as exiftool(-k).exe; rename to exiftool.exe for consistency
+        // ExifTool: Handle nested folder structure (e.g. exiftool-13.50_64/exiftool(-k).exe)
         if (name === 'exiftool') {
-            const exifK = path.join(binDir, 'exiftool(-k).exe')
-            const exif = path.join(binDir, 'exiftool.exe')
-            if (fs.existsSync(exifK) && !fs.existsSync(exif)) {
-                await fs.promises.rename(exifK, exif)
+            const findFile = async (dir: string, filename: string): Promise<string | null> => {
+                const entries = await fs.promises.readdir(dir, { withFileTypes: true })
+                for (const entry of entries) {
+                    const fullPath = path.join(dir, entry.name)
+                    if (entry.isDirectory()) {
+                        const found = await findFile(fullPath, filename)
+                        if (found) return found
+                    } else if (entry.name === filename) {
+                        return fullPath
+                    }
+                }
+                return null
+            }
+
+            const exifExePath = await findFile(binDir, 'exiftool(-k).exe')
+
+            if (exifExePath) {
+                const targetExe = path.join(binDir, 'exiftool.exe')
+
+                // Move executable
+                if (fs.existsSync(targetExe)) await fs.promises.unlink(targetExe)
+                await fs.promises.rename(exifExePath, targetExe)
+                console.log(`Moved ${exifExePath} to ${targetExe}`)
+
+                // Move exiftool_files if present (often in same dir as exe)
+                const sourceDir = path.dirname(exifExePath)
+                const sourceFilesDir = path.join(sourceDir, 'exiftool_files')
+                const targetFilesDir = path.join(binDir, 'exiftool_files')
+
+                if (fs.existsSync(sourceFilesDir)) {
+                    // Remove existing target files dir if exists
+                    if (fs.existsSync(targetFilesDir)) {
+                        await fs.promises.rm(targetFilesDir, { recursive: true, force: true }).catch(() => { })
+                    }
+                    try {
+                        await fs.promises.rename(sourceFilesDir, targetFilesDir)
+                    } catch (renameErr) {
+                        console.log(`Rename failed, falling back to copy:`, renameErr)
+                        await fs.promises.cp(sourceFilesDir, targetFilesDir, { recursive: true }).catch(err => {
+                            throw new Error(`Failed to copy exiftool_files: ${err.message}`);
+                        })
+                        await fs.promises.rm(sourceFilesDir, { recursive: true, force: true }).catch(err => {
+                            console.warn('Failed to rm sourceFilesDir, skipping:', err)
+                        })
+                    }
+                    console.log(`Moved ${sourceFilesDir} to ${targetFilesDir}`)
+                }
+
+                // Cleanup empty parent folder if it was nested
+                if (sourceDir !== binDir) {
+                    try {
+                        // Try to remove the versioned folder (e.g. exiftool-13.50_64)
+                        // Verify it's effectively empty or just trash now
+                        await fs.promises.rm(sourceDir, { recursive: true, force: true })
+                    } catch (err) {
+                        console.warn('Failed to cleanup exiftool source dir:', err)
+                    }
+                }
+            } else {
+                console.error('Could not find exiftool(-k).exe after extraction')
             }
         }
 

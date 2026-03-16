@@ -122,9 +122,8 @@ export default function FirstRunModal({ missingDeps, onDismiss }: FirstRunModalP
                         </div>
                         <button
                             onClick={onDismiss}
-                            disabled={!allDone}
                             title={!allDone ? "You will be able to close this after all dependencies are installed" : "Close"}
-                            className={`ml-auto p-1 rounded transition-colors ${!allDone ? 'opacity-30 cursor-not-allowed text-neutral-600' : 'hover:bg-white/5 text-neutral-500 hover:text-white'}`}
+                            className="ml-auto p-1 rounded transition-colors hover:bg-white/5 text-neutral-500 hover:text-white"
                         >
                             <X className="w-4 h-4" />
                         </button>

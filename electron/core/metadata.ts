@@ -293,12 +293,7 @@ async function readWithExifTool(filePath: string, exiftoolPath: string): Promise
                 addConsumed(fileModifiedMatch.key)
 
                 Object.keys(rawTags).forEach(key => {
-                    if (
-                        !consumedKeys.has(key) &&
-                        !key.startsWith('File:') &&
-                        !key.startsWith('System:') &&
-                        !key.startsWith('Composite:')
-                    ) {
+                    if (!consumedKeys.has(key)) {
                         metadata[key] = rawTags[key]
                     }
                 })
