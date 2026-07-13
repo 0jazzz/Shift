@@ -1,4 +1,4 @@
-import { motion, AnimatePresence } from 'framer-motion'
+import { motion, AnimatePresence, useDragControls } from 'framer-motion'
 import { X, Trash2, Copy, Check, Download } from 'lucide-react'
 import { useAppStore } from '../store/appStore'
 import { useRef, useEffect, useState } from 'react'
@@ -27,22 +27,41 @@ export default function LogsPanel() {
     }
 
     const zIndex = activeFloatingPanel === 'logs' ? 60 : 50
+    const boundsRef = useRef<HTMLDivElement>(null)
+    const dragControls = useDragControls()
 
     return (
         <AnimatePresence>
             {isLogsOpen && (
                 <motion.div
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: 20 }}
-                    drag
-                    dragMomentum={false}
-                    onPointerDown={() => bringToFront('logs')}
+                    key="logs-wrapper"
+                    ref={boundsRef}
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
                     style={{ zIndex }}
-                    className="fixed bottom-4 right-4 w-[500px] h-[300px] bg-[#0a0a0a] border border-[#1a1a1a] rounded-lg shadow-2xl font-mono text-xs flex flex-col overflow-hidden"
+                    className="fixed inset-0 flex items-end justify-end p-4 pointer-events-none"
                 >
+                    <motion.div
+                        key="logs-panel"
+                        initial={{ y: 20 }}
+                        animate={{ y: 0 }}
+                        exit={{ y: 20 }}
+                        drag
+                        dragControls={dragControls}
+                        dragListener={false}
+                        dragConstraints={boundsRef}
+                        dragMomentum={false}
+                        className="w-[500px] h-[300px] bg-[#0a0a0a] border border-[#1a1a1a] rounded-lg shadow-2xl font-mono text-xs flex flex-col overflow-hidden pointer-events-auto"
+                    >
                     {/* Header */}
-                    <div className="flex items-center justify-between px-3 py-2 border-b border-[#1a1a1a] cursor-move bg-[#0a0a0a]" data-drag-handle>
+                    <div 
+                        onPointerDown={(e) => {
+                            dragControls.start(e)
+                            bringToFront('logs')
+                        }}
+                        className="flex items-center justify-between px-3 py-2 border-b border-[#1a1a1a] cursor-move bg-[#0a0a0a]"
+                    >
                         <div className="flex items-center gap-2 pointer-events-none">
                             <span className="text-neutral-400">⟩_ LOGS</span>
                             <span className="text-neutral-600 text-[10px]">({logs.length} entries)</span>
@@ -110,6 +129,7 @@ export default function LogsPanel() {
                             ))
                         )}
                     </div>
+                    </motion.div>
                 </motion.div>
             )}
         </AnimatePresence>

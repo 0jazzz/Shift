@@ -11,7 +11,7 @@ export default {
                 surface: '#171717',
                 border: '#262626',
                 accent: {
-                    DEFAULT: '#3B82F6',
+                    DEFAULT: '#1e3a8a', // Deep, muted navy blue (blue-900)
                     glow: '#8B5CF6'
                 }
             },

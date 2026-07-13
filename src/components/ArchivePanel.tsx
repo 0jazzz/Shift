@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { motion, AnimatePresence } from 'framer-motion'
+import { useState, useRef } from 'react'
+import { motion, AnimatePresence, useDragControls } from 'framer-motion'
 import { X, Trash2, Folder, Clock, FileVideo, FileAudio, FileImage, FileText, ChevronDown, Layers } from 'lucide-react'
 import { useAppStore, type ArchiveEntry } from '../store/appStore'
 
@@ -85,22 +85,41 @@ export default function ArchivePanel() {
 
     const zIndex = activeFloatingPanel === 'archive' ? 60 : 50
 
+    const boundsRef = useRef<HTMLDivElement>(null)
+    const dragControls = useDragControls()
+
     return (
         <AnimatePresence>
             {isArchiveOpen && (
                 <motion.div
-                    initial={{ opacity: 0, scale: 0.95 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    exit={{ opacity: 0, scale: 0.95 }}
-                    drag
-                    dragMomentum={false}
-                    onPointerDown={() => bringToFront('archive')}
+                    key="archive-wrapper"
+                    ref={boundsRef}
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
                     style={{ zIndex }}
-                    className="fixed inset-0 flex items-center justify-center p-8 pointer-events-none"
+                    className="fixed inset-0 flex items-center justify-center pointer-events-none p-4"
                 >
-                    <div className="bg-[#0a0a0a] border border-[#1a1a1a] rounded-xl shadow-2xl w-full max-w-2xl h-[600px] flex flex-col pointer-events-auto overflow-hidden font-mono text-sm">
+                    <motion.div
+                        key="archive-panel"
+                        initial={{ scale: 0.95, x: 0, y: 0 }}
+                        animate={{ scale: 1 }}
+                        exit={{ scale: 0.95 }}
+                        drag
+                        dragControls={dragControls}
+                        dragListener={false}
+                        dragConstraints={boundsRef}
+                        dragMomentum={false}
+                        className="bg-[#0a0a0a] border border-[#1a1a1a] rounded-xl shadow-2xl w-full max-w-2xl h-[600px] flex flex-col pointer-events-auto overflow-hidden font-mono text-sm"
+                    >
                         {/* Header */}
-                        <div className="flex items-center justify-between px-3 py-2 border-b border-[#1a1a1a] bg-[#0a0a0a] cursor-move" data-drag-handle>
+                        <div 
+                            onPointerDown={(e) => {
+                                dragControls.start(e)
+                                bringToFront('archive')
+                            }}
+                            className="flex items-center justify-between px-3 py-2 border-b border-[#1a1a1a] bg-[#0a0a0a] cursor-move"
+                        >
                             <div className="flex items-center gap-2 pointer-events-none">
                                 <Clock className="w-4 h-4 text-neutral-400" />
                                 <span className="text-neutral-400">⟩_ ARCHIVE</span>
@@ -250,7 +269,7 @@ export default function ArchivePanel() {
                                 })
                             )}
                         </div>
-                    </div>
+                    </motion.div>
                 </motion.div>
             )}
         </AnimatePresence>

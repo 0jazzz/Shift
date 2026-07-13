@@ -14,50 +14,10 @@
       background-color: #0A0A0A;
       font-family: 'Inter', system-ui, -apple-system, sans-serif;
     }
-
-    #loading {
-      position: fixed;
-      top: 0;
-      left: 0;
-      right: 0;
-      bottom: 0;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      background-color: #0A0A0A;
-      color: white;
-      gap: 16px;
-    }
-
-    #loading .spinner {
-      width: 32px;
-      height: 32px;
-      border: 3px solid #262626;
-      border-top-color: #3B82F6;
-      border-radius: 50%;
-      animation: spin 0.8s linear infinite;
-    }
-
-    #loading .text {
-      font-size: 14px;
-      color: #666;
-      letter-spacing: 0.5px;
-    }
-
-    @keyframes spin {
-      to {
-        transform: rotate(360deg);
-      }
-    }
   </style>
 </head>
 
 <body>
-  <div id="loading">
-    <div class="spinner"></div>
-    <div class="text">INITIALIZING</div>
-  </div>
   <div id="root"></div>
   <script type="module" src="/src/main.tsx"></script>
 </body>

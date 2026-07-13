@@ -1,15 +1,16 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { lazy, Suspense, useState, useEffect, useRef, useCallback } from 'react'
 import SplashScreen from './components/SplashScreen'
-import Header from './components/Header'
-import HeroDropZone from './components/HeroDropZone'
-import TaskList from './components/TaskList'
-import SettingsDrawer from './components/SettingsDrawer'
-import SmartDropdown from './components/SmartDropdown'
-import FirstRunModal from './components/FirstRunModal'
-import Onboarding from './components/Onboarding'
-import LogsPanel from './components/LogsPanel'
-import ArchivePanel from './components/ArchivePanel'
-import MetadataModal from './components/MetadataModal'
+
+const Header = lazy(() => import('./components/Header'))
+const HeroDropZone = lazy(() => import('./components/HeroDropZone'))
+const TaskList = lazy(() => import('./components/TaskList'))
+const SettingsDrawer = lazy(() => import('./components/SettingsDrawer'))
+const SmartDropdown = lazy(() => import('./components/SmartDropdown'))
+const FirstRunModal = lazy(() => import('./components/FirstRunModal'))
+const Onboarding = lazy(() => import('./components/Onboarding'))
+const LogsPanel = lazy(() => import('./components/LogsPanel'))
+const ArchivePanel = lazy(() => import('./components/ArchivePanel'))
+const MetadataModal = lazy(() => import('./components/MetadataModal'))
 import { useAppStore, type Task } from './store/appStore'
 import { Play, Trash2, Loader2, Square } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
@@ -18,6 +19,8 @@ function App() {
     const { tasks, addTask, updateTask, removeTask, clearCompleted, addLog, addToArchive, removeAllTasks, hasCompletedOnboarding, editingTaskId, setEditingTask } = useAppStore()
     const [missingDeps, setMissingDeps] = useState<string[]>([])
     const [showSplash, setShowSplash] = useState(true)
+    const [appReady, setAppReady] = useState(false)
+    const [splashKey, setSplashKey] = useState(0)
     const [showFirstRun, setShowFirstRun] = useState(false)
     const [isConverting, setIsConverting] = useState(false)
     const [isPaused, setIsPaused] = useState(false)
@@ -27,14 +30,12 @@ function App() {
     const pausedRef = useRef(false)
     const pauseResolver = useRef<((value: void | PromiseLike<void>) => void) | null>(null)
 
-    // Splash Screen Timer & Dev Reset
+    // Splash Screen & Initial Setup
     useEffect(() => {
-        // DEV: Force onboarding every time
-        useAppStore.setState({ hasCompletedOnboarding: false })
-
+        // Signal app ready after initial setup completes
         const timer = setTimeout(() => {
-            setShowSplash(false)
-        }, 3000)
+            setAppReady(true)
+        }, 500)
         return () => clearTimeout(timer)
     }, [])
 
@@ -264,15 +265,46 @@ function App() {
     return (
         <div className="h-screen bg-black text-white flex flex-col select-none overflow-hidden font-sans">
             <AnimatePresence>
-                {showSplash && <SplashScreen key="splash" />}
+                {showSplash && <SplashScreen key={`splash-${splashKey}`} appReady={appReady} onComplete={() => setShowSplash(false)} />}
             </AnimatePresence>
 
+            {/* DEV: Replay utilities */}
             {!showSplash && (
-                <>
+                <div className="fixed bottom-4 right-4 z-[9998] flex gap-2">
+                    <button
+                        onClick={() => {
+                            // Close settings first, let onboarding reopen it on mount
+                            useAppStore.setState({ isSettingsOpen: false })
+                            // Small delay so the drawer closes before onboarding tries to reopen
+                            setTimeout(() => {
+                                useAppStore.setState({ hasCompletedOnboarding: false })
+                            }, 100)
+                        }}
+                        className="px-3 py-1.5 text-xs font-mono bg-white/10 hover:bg-white/20 text-white/60 hover:text-white rounded border border-white/10 transition-colors"
+                    >
+                        ▶ Replay Onboarding
+                    </button>
+                    <button
+                        onClick={() => {
+                            setSplashKey(k => k + 1)
+                            setAppReady(false)
+                            setShowSplash(true)
+                            setTimeout(() => setAppReady(true), 500)
+                        }}
+                        className="px-3 py-1.5 text-xs font-mono bg-white/10 hover:bg-white/20 text-white/60 hover:text-white rounded border border-white/10 transition-colors"
+                    >
+                        ▶ Replay Splash
+                    </button>
+                </div>
+            )}
+
+            {!showSplash && (
+                <Suspense fallback={<div className="h-full bg-black" />}>
                     {/* Onboarding Flow */}
                     <>
                         {/* Main App UI - Always rendered behind onboarding */}
                         <>
+
                             <Header />
                             <div className="flex-1 flex flex-col p-6 space-y-4 overflow-hidden">
                                 <HeroDropZone onFileDrop={handleFileDrop} />
@@ -505,7 +537,7 @@ function App() {
                             </AnimatePresence>
                         )}
                     </>
-                </>
+                </Suspense>
             )}
         </div>
     )

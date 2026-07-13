@@ -146,18 +146,21 @@ export default function SettingsDrawer() {
     // Load dependencies and GPUs on mount
     useEffect(() => {
         if (isSettingsOpen && window.electron?.invoke) {
-            window.electron.invoke<DependencyStatus[]>('checkDependencies').then(setDependencies)
-            window.electron.invoke<GpuInfo[]>('detectGpus').then(gpuList => {
-                setGpus(gpuList)
-                // If preference exists and is in list, use it. Otherwise default to first.
-                if (gpuPreference && gpuList.some(g => g.name === gpuPreference)) {
-                    // Already set in store
-                } else if (gpuList.length > 0 && !gpuPreference) {
-                    setGpuPreference(gpuList[0].name)
-                }
-            })
+            const timer = setTimeout(() => {
+                window.electron.invoke<DependencyStatus[]>('checkDependencies').then(setDependencies)
+                window.electron.invoke<GpuInfo[]>('detectGpus').then(gpuList => {
+                    setGpus(gpuList)
+                    // If preference exists and is in list, use it. Otherwise default to first.
+                    if (gpuPreference && gpuList.some(g => g.name === gpuPreference)) {
+                        // Already set in store
+                    } else if (gpuList.length > 0 && !gpuPreference) {
+                        setGpuPreference(gpuList[0].name)
+                    }
+                })
+            }, 350)
+            return () => clearTimeout(timer)
         }
-    }, [isSettingsOpen, gpuPreference, setGpuPreference])
+    }, [isSettingsOpen])
 
     const handleRedownload = async (depName: string) => {
         if (!window.electron?.invoke) return
@@ -214,12 +217,12 @@ export default function SettingsDrawer() {
                                         </div>
                                         <button
                                             onClick={toggleAutoSaveArchive}
-                                            className={`w-10 h-5 rounded-full relative transition-colors ${autoSaveArchive ? 'bg-blue-600' : 'bg-neutral-800'}`}
+                                            className={`w-9 h-5 rounded-full relative transition-colors duration-300 ${autoSaveArchive ? 'bg-blue-600' : 'bg-neutral-800'}`}
                                         >
                                             <motion.div
                                                 initial={false}
-                                                animate={{ x: autoSaveArchive ? 20 : 0 }}
-                                                className="absolute top-1 left-1 w-3 h-3 bg-white rounded-full shadow-sm"
+                                                animate={{ x: autoSaveArchive ? 16 : 0 }}
+                                                className="absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow"
                                             />
                                         </button>
                                         <div className="absolute top-full left-0 mt-2 px-2 py-1 bg-black border border-[#222] text-neutral-400 text-[10px] rounded opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50 whitespace-nowrap">
@@ -235,12 +238,12 @@ export default function SettingsDrawer() {
                                         </div>
                                         <button
                                             onClick={toggleAutoSaveLogs}
-                                            className={`w-10 h-5 rounded-full relative transition-colors ${autoSaveLogs ? 'bg-blue-600' : 'bg-neutral-800'}`}
+                                            className={`w-9 h-5 rounded-full relative transition-colors duration-300 ${autoSaveLogs ? 'bg-blue-600' : 'bg-neutral-800'}`}
                                         >
                                             <motion.div
                                                 initial={false}
-                                                animate={{ x: autoSaveLogs ? 20 : 0 }}
-                                                className="absolute top-1 left-1 w-3 h-3 bg-white rounded-full shadow-sm"
+                                                animate={{ x: autoSaveLogs ? 16 : 0 }}
+                                                className="absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow"
                                             />
                                         </button>
                                         <div className="absolute top-full left-0 mt-2 px-2 py-1 bg-black border border-[#222] text-neutral-400 text-[10px] rounded opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50 whitespace-nowrap">
@@ -301,7 +304,7 @@ export default function SettingsDrawer() {
                                     <input
                                         type="range"
                                         min="0.5"
-                                        max="1.5"
+                                        max="2.0"
                                         step="0.1"
                                         value={uiScale}
                                         onChange={(e) => {
@@ -316,7 +319,7 @@ export default function SettingsDrawer() {
                                 <div className="flex justify-between text-[10px] text-neutral-600 mt-2">
                                     <span>0.5x</span>
                                     <span>1.0x</span>
-                                    <span>1.5x</span>
+                                    <span>2.0x</span>
                                 </div>
                             </Section>
 
@@ -329,11 +332,24 @@ export default function SettingsDrawer() {
                                         className="w-full bg-[#111] border border-[#222] rounded px-3 py-2 text-neutral-300 focus:outline-none focus:border-blue-500/50 transition-colors cursor-pointer hover:bg-[#161616]"
                                     >
                                         {gpus.map((gpu, i) => (
-                                            <option key={i} value={gpu.name}>
+                                            <option 
+                                                key={i} 
+                                                value={gpu.name}
+                                                className="bg-[#111] text-neutral-300"
+                                                style={{ backgroundColor: '#111', color: '#d4d4d4' }}
+                                            >
                                                 {gpu.name}
                                             </option>
                                         ))}
-                                        {gpus.length === 0 && <option value="">Detecting GPUs...</option>}
+                                        {gpus.length === 0 && (
+                                            <option 
+                                                value="" 
+                                                className="bg-[#111] text-neutral-300"
+                                                style={{ backgroundColor: '#111', color: '#d4d4d4' }}
+                                            >
+                                                Detecting GPUs...
+                                            </option>
+                                        )}
                                     </select>
                                     <Tooltip text="Select specific GPU for hardware encoding (NVENC/AMF/QSV)." />
                                 </div>

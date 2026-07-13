@@ -1,5 +1,6 @@
 import { Monitor, Minus, X, Square, Settings, Activity, Cpu, Terminal, Clock } from 'lucide-react'
 import { useAppStore } from '../store/appStore'
+import { invoke } from '@tauri-apps/api/core'
 
 export default function Header() {
     const toggleSettings = useAppStore(state => state.toggleSettings)
@@ -9,16 +10,21 @@ export default function Header() {
     const logs = useAppStore(state => state.logs)
 
 
-    const handleMinimize = () => window.electron?.send('toMain', { type: 'minimize' })
-    const handleMaximize = () => window.electron?.send('toMain', { type: 'maximize' })
-    const handleClose = () => window.electron?.send('toMain', { type: 'close' })
+    const handleMinimize = () => invoke('window_minimize')
+    const handleMaximize = () => invoke('window_maximize')
+    const handleClose = () => invoke('window_close')
 
     const activeCount = tasks.filter(t => t.status === 'converting').length
 
     return (
         <div
-            className="h-9 bg-[#0a0a0a] border-b border-[#1a1a1a] flex items-center px-3 justify-between font-mono text-xs"
-            style={{ WebkitAppRegion: 'drag' } as any}
+            className="h-9 bg-[#0a0a0a] border-b border-[#1a1a1a] flex items-center px-3 justify-between font-mono text-xs select-none"
+            onPointerDown={(e) => {
+                // Start drag if we didn't click a button or interactive element
+                if (!(e.target as HTMLElement).closest('button')) {
+                    invoke('window_start_dragging')
+                }
+            }}
         >
             {/* Left: Logo & Status */}
             <div className="flex items-center gap-4 flex-1 min-w-0">
@@ -46,7 +52,6 @@ export default function Header() {
                         id="tour-logs-button"
                         onClick={toggleLogs}
                         className={`flex items-center gap-1 hover:text-white transition-colors flex-shrink-0 ${useAppStore.getState().activeFloatingPanel === 'logs' ? 'text-white' : ''}`}
-                        style={{ WebkitAppRegion: 'no-drag' } as any}
                     >
                         <Terminal className="w-3 h-3" />
                         <span className="truncate">LOGS{logs.length > 0 ? `:${logs.length}` : ''}</span>
@@ -55,7 +60,6 @@ export default function Header() {
                         id="tour-archive-button"
                         onClick={toggleArchive}
                         className={`flex items-center gap-1 hover:text-white transition-colors flex-shrink-0 ${useAppStore.getState().activeFloatingPanel === 'archive' ? 'text-white' : ''}`}
-                        style={{ WebkitAppRegion: 'no-drag' } as any}
                     >
                         <Clock className="w-3 h-3" />
                         <span className="truncate">ARCHIVE</span>
@@ -64,7 +68,7 @@ export default function Header() {
             </div>
 
             {/* Right: Controls */}
-            <div className="flex items-center gap-2 flex-shrink-0 ml-4" style={{ WebkitAppRegion: 'no-drag' } as any}>
+            <div className="flex items-center gap-2 flex-shrink-0 ml-4">
                 <button
                     onClick={toggleSettings}
                     className="p-1.5 hover:bg-[#1a1a1a] rounded transition-colors"

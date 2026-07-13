@@ -144,8 +144,8 @@ export const useAppStore = create<AppState>()(
                 uiScale: state.uiScale,
                 gpuPreference: state.gpuPreference,
                 autoSaveArchive: state.autoSaveArchive,
-                autoSaveLogs: state.autoSaveLogs
-                // hasCompletedOnboarding NOT persisted - shows onboarding every dev launch
+                autoSaveLogs: state.autoSaveLogs,
+                hasCompletedOnboarding: state.hasCompletedOnboarding
             }),
         }
     )

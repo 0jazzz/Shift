@@ -22,7 +22,6 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
     const [currentStepIndex, setCurrentStepIndex] = useState(0)
     const [highlightRect, setHighlightRect] = useState<DOMRect | null>(null)
     const resizeTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-    const measureRetryRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
     const { setSettingsOpen } = useAppStore()
 
@@ -103,71 +102,91 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
         }
     ]
 
+    const settingsDrawerIds = [
+        'tour-dependency-manager',
+        'tour-dependencies',
+        'tour-gpu-settings',
+        'tour-ui-scale',
+        'tour-output-paths',
+        'tour-autosave-settings'
+    ]
+
     // Open settings drawer on mount for the first step
     useEffect(() => {
         setSettingsOpen(true)
     }, [])
 
-    // Step Change Effect
+    // Step Change Effect — Keep Drawer Open & Track
     useEffect(() => {
         const currentStep = tourSteps[currentStepIndex]
+        if (!currentStep.targetId) return
 
-        // IDs that require settings drawer to be open
-        const settingsDrawerIds = [
-            'tour-dependency-manager',
-            'tour-dependencies',
-            'tour-gpu-settings',
-            'tour-ui-scale',
-            'tour-output-paths',
-            'tour-autosave-settings'
-        ]
-        const isInSettings = currentStep.targetId && settingsDrawerIds.includes(currentStep.targetId)
+        const isInSettings = settingsDrawerIds.includes(currentStep.targetId)
+        const prevStep = currentStepIndex > 0 ? tourSteps[currentStepIndex - 1] : null
+        const wasInSettings = prevStep?.targetId && settingsDrawerIds.includes(prevStep.targetId)
 
-        // Handle Drawer
-        // We set this immediately. If the previous step was in the drawer and this one isn't,
-        // the drawer will start closing animation via its own component.
-        // Since the drawer is an overlay (fixed position), it doesn't affect the Header layout.
-        if (isInSettings) {
-            setSettingsOpen(true)
-        } else {
+        let closeTimer: any
+
+        if (wasInSettings && !isInSettings) {
+            // Close drawer instantly
             setSettingsOpen(false)
+        } else {
+            setSettingsOpen(isInSettings)
         }
 
-        // Measure function
-        const measure = () => {
-            if (currentStep.targetId) {
-                const el = document.getElementById(currentStep.targetId)
-                if (el) {
-                    el.scrollIntoView({ behavior: 'auto', block: 'center' })
+        let frameId: number
 
-                    // Standard double RAF ensures layout is settled for the current frame
-                    requestAnimationFrame(() => {
-                        requestAnimationFrame(() => {
-                            const rect = el.getBoundingClientRect()
-                            const inf = currentStep.inflation || 0
-                            setHighlightRect(new DOMRect(
-                                rect.x - inf,
-                                rect.y - inf,
-                                rect.width + (inf * 2),
-                                rect.height + (inf * 2)
-                            ))
-                        })
-                    })
+        // Continuous layout tracking ensures the box stays glued to the element 
+        // even if the layout shifts (e.g. when the drawer finally closes)
+        const trackAndMeasure = () => {
+            const el = document.getElementById(currentStep.targetId!)
+            
+            if (el) {
+                const rect = el.getBoundingClientRect()
+                const inf = currentStep.inflation || 0
+                // Divide by zoom: getBoundingClientRect returns viewport px,
+                // but CSS top/left/clip-path inside a zoomed body use CSS px
+                const zoom = parseFloat((document.body.style as any).zoom) || 1
+                const newX = (rect.x - inf) / zoom
+                const newY = (rect.y - inf) / zoom
+                const newW = (rect.width + (inf * 2)) / zoom
+                const newH = (rect.height + (inf * 2)) / zoom
+
+                setHighlightRect(prev => {
+                    if (!prev || Math.abs(prev.x - newX) > 1 || Math.abs(prev.y - newY) > 1 || Math.abs(prev.width - newW) > 1) {
+                        return new DOMRect(newX, newY, newW, newH)
+                    }
+                    return prev
+                })
+            }
+
+            frameId = requestAnimationFrame(trackAndMeasure)
+        }
+
+        // Wait a frame for React to mount elements if needed, then scroll & start tracking
+        requestAnimationFrame(() => {
+            const el = document.getElementById(currentStep.targetId!)
+            if (el) {
+                // Manual scroll: find the nearest scrollable parent and center the element within it
+                const scrollContainer = el.closest('.custom-scrollbar') as HTMLElement | null
+                if (scrollContainer) {
+                    const containerRect = scrollContainer.getBoundingClientRect()
+                    const elRect = el.getBoundingClientRect()
+                    // Calculate how much to scroll so the element is vertically centered in the container
+                    const currentScrollTop = scrollContainer.scrollTop
+                    const elTopRelativeToContainer = elRect.top - containerRect.top + currentScrollTop
+                    const desiredScrollTop = elTopRelativeToContainer - (containerRect.height / 2) + (elRect.height / 2)
+                    scrollContainer.scrollTo({ top: desiredScrollTop, behavior: 'smooth' })
                 } else {
-                    measureRetryRef.current = setTimeout(measure, 50)
+                    el.scrollIntoView({ behavior: 'smooth', block: 'center' })
                 }
             }
-        }
-
-        // Only delay if we are opening the drawer to allow it to render content
-        // Otherwise (closing drawer or navigating within same context), measure immediately.
-        const delay = isInSettings ? 600 : 0
-
-        const timer = setTimeout(measure, delay)
+            trackAndMeasure()
+        })
 
         return () => {
-            clearTimeout(timer)
-            if (measureRetryRef.current) clearTimeout(measureRetryRef.current)
+            clearTimeout(closeTimer)
+            cancelAnimationFrame(frameId)
         }
     }, [currentStepIndex])
 
@@ -182,9 +201,10 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
                     if (el) {
                         const rect = el.getBoundingClientRect()
                         const inf = currentStep.inflation || 0
+                        const zoom = parseFloat((document.body.style as any).zoom) || 1
                         setHighlightRect(new DOMRect(
-                            rect.x - inf, rect.y - inf,
-                            rect.width + (inf * 2), rect.height + (inf * 2)
+                            (rect.x - inf) / zoom, (rect.y - inf) / zoom,
+                            (rect.width + (inf * 2)) / zoom, (rect.height + (inf * 2)) / zoom
                         ))
                     }
                 }
@@ -198,31 +218,9 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
         }
     }, [currentStepIndex])
 
+    // handleNext: ONLY changes step index. Measurement is centralized in useEffect.
     const handleNext = () => {
         if (currentStepIndex < tourSteps.length - 1) {
-            const nextIndex = currentStepIndex + 1
-            const nextStep = tourSteps[nextIndex]
-
-            if (nextStep.targetId) {
-                const el = document.getElementById(nextStep.targetId)
-                if (el) {
-                    // 1. Scroll FIRST (instantly) if needed
-                    // This prevents the "jump" where the box goes to the old position,
-                    // then the page scrolls, then the box corrects itself.
-                    el.scrollIntoView({ behavior: 'instant', block: 'center' })
-
-                    // 2. Measure immediately after scrolling
-                    const rect = el.getBoundingClientRect()
-                    const inf = nextStep.inflation || 0
-                    setHighlightRect(new DOMRect(
-                        rect.x - inf,
-                        rect.y - inf,
-                        rect.width + (inf * 2),
-                        rect.height + (inf * 2)
-                    ))
-                }
-            }
-
             setCurrentStepIndex(prev => prev + 1)
         } else {
             onComplete()
@@ -234,9 +232,21 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
         const stepConfig = tourSteps[currentStepIndex]
         const gap = 20
         let pos = { top: 0, left: 0, x: '0%', y: '0%' }
+
+        // Use clientWidth/Height — these are zoom-safe unlike window.innerWidth/Height
+        const zoom = parseFloat((document.body.style as any).zoom) || 1
+        const vw = window.innerWidth / zoom
+        const vh = window.innerHeight / zoom
+
         switch (stepConfig.placement) {
             case 'left':
-                pos = { top: highlightRect.top + (highlightRect.height / 2), left: highlightRect.left - gap, x: '-100%', y: '-50%' }
+                // Position card right next to the highlight's left edge
+                pos = {
+                    top: highlightRect.top + (highlightRect.height / 2),
+                    left: highlightRect.left - gap,
+                    x: '-100%',
+                    y: '-50%'
+                }
                 break
             case 'right':
                 pos = { top: highlightRect.top + (highlightRect.height / 2), left: highlightRect.right + gap, x: '0%', y: '-50%' }
@@ -252,74 +262,75 @@ export default function Onboarding({ onComplete }: OnboardingProps) {
         }
 
         const W = 320, H = 250, M = 20
-        if (pos.y === '-50%') pos.top = Math.max(H / 2 + M, Math.min(pos.top, window.innerHeight - H / 2 - M))
-        else if (pos.y === '0%') pos.top = Math.max(M, Math.min(pos.top, window.innerHeight - H - M))
-        else if (pos.y === '-100%') pos.top = Math.max(H + M, Math.min(pos.top, window.innerHeight - M))
+        if (pos.y === '-50%') pos.top = Math.max(H / 2 + M, Math.min(pos.top, vh - H / 2 - M))
+        else if (pos.y === '0%') pos.top = Math.max(M, Math.min(pos.top, vh - H - M))
+        else if (pos.y === '-100%') pos.top = Math.max(H + M, Math.min(pos.top, vh - M))
 
-        if (pos.x === '-50%') pos.left = Math.max(W / 2 + M, Math.min(pos.left, window.innerWidth - W / 2 - M))
-        else if (pos.x === '0%') pos.left = Math.max(M, Math.min(pos.left, window.innerWidth - W - M))
-        else if (pos.x === '-100%') pos.left = Math.max(W + M, Math.min(pos.left, window.innerWidth - M))
+        if (pos.x === '-50%') pos.left = Math.max(W / 2 + M, Math.min(pos.left, vw - W / 2 - M))
+        else if (pos.x === '0%') pos.left = Math.max(M, Math.min(pos.left, vw - W - M))
+        else if (pos.x === '-100%') pos.left = Math.max(W + M, Math.min(pos.left, vw - M))
 
         return pos
     }
 
     const cardPos = getCardPosition()
-    const snappySpring = { type: "spring" as const, stiffness: 400, damping: 35 }
+    const snappySpring = { type: "spring" as const, stiffness: 400, damping: 35, restDelta: 1, restSpeed: 10 }
     const isFirstStep = currentStepIndex === 0
 
     return (
         <div className="fixed inset-0 z-[5000] pointer-events-none">
-            {/* Blocker/Dimming Overlay - 4 parts to allow click-through in center */}
+            {/* Single Clip-Path Mask Overlay - replaces 4 layout-animated quadrants */}
             {highlightRect ? (
-                <>
-                    {/* Top */}
-                    <motion.div
-                        className="absolute bg-black/50 pointer-events-auto"
-                        animate={{ top: 0, left: 0, right: 0, height: highlightRect.top }}
-                        transition={snappySpring}
-                    />
-                    {/* Bottom */}
-                    <motion.div
-                        className="absolute bg-black/50 pointer-events-auto"
-                        animate={{ top: highlightRect.bottom, left: 0, right: 0, bottom: 0 }}
-                        transition={snappySpring}
-                    />
-                    {/* Left */}
-                    <motion.div
-                        className="absolute bg-black/50 pointer-events-auto"
-                        animate={{ top: highlightRect.top, left: 0, width: highlightRect.left, height: highlightRect.height }}
-                        transition={snappySpring}
-                    />
-                    {/* Right */}
-                    <motion.div
-                        className="absolute bg-black/50 pointer-events-auto"
-                        animate={{ top: highlightRect.top, left: highlightRect.right, right: 0, height: highlightRect.height }}
-                        transition={snappySpring}
-                    />
-                </>
+                <div 
+                    className="absolute inset-0 bg-black/50 pointer-events-auto"
+                    style={{
+                        clipPath: `polygon(
+                            0% 0%, 
+                            0% 100%, 
+                            ${highlightRect.left}px 100%, 
+                            ${highlightRect.left}px ${highlightRect.top}px, 
+                            ${highlightRect.right}px ${highlightRect.top}px, 
+                            ${highlightRect.right}px ${highlightRect.bottom}px, 
+                            ${highlightRect.left}px ${highlightRect.bottom}px, 
+                            ${highlightRect.left}px 100%, 
+                            100% 100%, 
+                            100% 0%
+                        )`,
+                        transition: isFirstStep 
+                            ? 'opacity 0.7s ease' 
+                            : 'clip-path 0.35s cubic-bezier(0.22, 0.61, 0.36, 1)'
+                    }}
+                    onWheel={(e) => {
+                        const drawer = document.querySelector('.custom-scrollbar')
+                        if (drawer) drawer.scrollTop += e.deltaY
+                    }}
+                />
             ) : (
                 // Fallback full cover if no rect yet
-                <div className="absolute inset-0 bg-black/50 pointer-events-auto" />
+                <div 
+                    className="absolute inset-0 bg-black/50 pointer-events-auto"
+                    onWheel={(e) => {
+                        const drawer = document.querySelector('.custom-scrollbar')
+                        if (drawer) drawer.scrollTop += e.deltaY
+                    }}
+                />
             )}
 
-            {/* Spotlight Highlight Box (Border Only) */}
+            {/* Spotlight Highlight Box — pure CSS transition, immune to React re-renders */}
             {highlightRect && (
-                <motion.div
-                    layoutId="highlight-box"
-                    initial={isFirstStep ? { opacity: 0 } : false}
-                    animate={{
-                        opacity: 1,
-                        top: highlightRect.top,
-                        left: highlightRect.left,
-                        width: highlightRect.width,
-                        height: highlightRect.height
-                    }}
-                    transition={{
-                        ...snappySpring,
-                        opacity: { duration: isFirstStep ? 0.7 : 0.15 }
-                    }}
-                    // Removed boxShadow - using blockers instead
+                <div
                     className="absolute border-2 border-blue-500 rounded-lg bg-transparent pointer-events-none z-10"
+                    style={{
+                        top: 0,
+                        left: 0,
+                        transform: `translate(${highlightRect.left}px, ${highlightRect.top}px)`,
+                        width: highlightRect.width,
+                        height: highlightRect.height,
+                        transition: isFirstStep
+                            ? 'opacity 0.7s ease'
+                            : 'transform 0.35s cubic-bezier(0.22, 0.61, 0.36, 1), width 0.35s cubic-bezier(0.22, 0.61, 0.36, 1), height 0.35s cubic-bezier(0.22, 0.61, 0.36, 1)',
+                        willChange: 'transform, width, height',
+                    }}
                 />
             )}
 
