@@ -77,9 +77,5 @@ Because Shift is built on **Tauri v2** and **React**, the exact same codebase an
 *   **Private & Free**: No server uploads, no data collection. Just a slightly slower, web-accessible version of the native experience.
 
 ### 2. Shift Mobile (`shift-ios` / `shift-android`)
-*   **Fully Free & Ad-Supported**: Native mobile applications using Tauri's mobile bindings for iOS and Android.
+*   **Fully Free**: Native mobile applications using Tauri's mobile bindings for iOS and Android.
 *   **Native Conversion**: Media will be converted natively on the user's phone.
-*   **Monetization**: Unobtrusive ad integration (e.g., banner or interstitial) to keep the app fully free for everyone.
-
-### 3. Shift macOS (`shift-mac`)
-*   **Apple Silicon Support**: Cross-compiled directly to `.dmg`/`.app` for blazing fast, native performance on M-series MacBooks.
