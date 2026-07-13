@@ -71,6 +71,8 @@
 
 Because Shift is built on **Tauri v2** and **React**, the exact same codebase and UI will be expanded into a full, cross-platform ecosystem in the future:
 
+## In production, will be deployed layer!
+
 ### 1. Shift Web (`shift-web`)
 *   **Fully in-browser**: Users can visit the website and use the fully interactive app exactly like the desktop version.
 *   **100% Client-Side**: Powered by WebAssembly (`ffmpeg.wasm`, `magick-wasm`, etc.) and the File System Access API. Conversions run on the user's hardware within the browser.
