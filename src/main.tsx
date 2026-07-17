@@ -6,6 +6,7 @@ import App from "./App";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { open } from "@tauri-apps/plugin-dialog";
 
 // Show the window now that React is ready to paint
 getCurrentWindow().show();
@@ -82,7 +83,19 @@ window.electron = {
         return await invoke("download_dependency", { depName: args[0] });
       if (channel === "deleteAllDependencies")
         return await invoke("delete_all_dependencies");
-      if (channel === "selectFolder") return await invoke("select_folder");
+      if (channel === "initializeOutputDirectories")
+        return await invoke("initialize_output_directories");
+      if (channel === "openDefaultFileManager")
+        return await invoke("open_default_file_manager");
+      if (channel === "getFileSize")
+        return await invoke("get_file_size", { path: args[0] });
+      if (channel === "selectFolder") {
+        const selected = await open({
+          directory: true,
+          multiple: false,
+        });
+        return selected || null;
+      }
       if (channel === "saveSilent")
         return await invoke("save_silent", { payload: args[0] });
 
@@ -124,7 +137,7 @@ window.electron = {
   removeListener: legacyRemoveListener,
   removeAllListeners: legacyRemoveAllListeners,
 
-  getPathForFile: (file: any) => file.name,
+  getPathForFile: (file: any) => file.path || file.name,
   showItemInFolder: () => {},
 } as any;
 

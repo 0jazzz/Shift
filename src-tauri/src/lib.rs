@@ -2,13 +2,13 @@ use serde::Serialize;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use tauri::Emitter;
+use tauri::Manager;
 
 // Declare new backend modules containing your learning tasks
 pub mod conversion_graph;
 pub mod downloader;
 pub mod engine;
 pub mod metadata;
-
 
 #[derive(Serialize)]
 struct DependencyStatus {
@@ -219,7 +219,8 @@ fn detect_gpus() -> Vec<GpuInfo> {
         if let Ok(output) = Command::new("lspci").output() {
             if let Ok(text) = String::from_utf8(output.stdout) {
                 for line in text.lines() {
-                    if line.contains("VGA compatible controller") || line.contains("3D controller") {
+                    if line.contains("VGA compatible controller") || line.contains("3D controller")
+                    {
                         if let Some(pos) = line.find("controller:") {
                             let name = line[pos + 11..].trim().to_string();
                             let vendor = if name.to_lowercase().contains("nvidia") {
@@ -277,12 +278,10 @@ fn show_item_in_folder(path: String) {
                 .arg(format!("/select,{}", p.display()))
                 .spawn();
         } else if let Some(parent) = p.parent() {
-            let _ = Command::new("explorer")
-                .arg(parent)
-                .spawn();
+            let _ = Command::new("explorer").arg(parent).spawn();
         }
     }
-    
+
     #[cfg(not(target_os = "windows"))]
     {
         let parent = if p.is_dir() {
@@ -302,29 +301,44 @@ fn start_conversion(payload: serde_json::Value, window: tauri::Window) -> serde_
     match serde_json::from_value::<crate::engine::ConversionTask>(payload) {
         Ok(task) => {
             let task_id = task.task_id.clone();
-            std::thread::spawn(move || {
-                match crate::engine::convert_file(task, window.clone()) {
-                    Ok(out_path) => {
-                        let _ = window.emit("fromMain", serde_json::json!({
+            match crate::engine::convert_file(task, window.clone()) {
+                Ok(out_path) => {
+                    let _ = window.emit(
+                        "fromMain",
+                        serde_json::json!({
                             "type": "conversionProgress",
                             "taskId": task_id,
                             "percent": 100,
                             "status": "done",
                             "outputPath": out_path.to_string_lossy()
-                        }));
-                    }
-                    Err(err) => {
-                        let _ = window.emit("fromMain", serde_json::json!({
+                        }),
+                    );
+                    let size = std::fs::metadata(&out_path)
+                        .map(|m| m.len())
+                        .unwrap_or(0);
+                    serde_json::json!({
+                        "success": true,
+                        "outputPath": out_path.to_string_lossy(),
+                        "outputSize": size
+                    })
+                }
+                Err(err) => {
+                    let _ = window.emit(
+                        "fromMain",
+                        serde_json::json!({
                             "type": "conversionProgress",
                             "taskId": task_id,
                             "percent": 0,
                             "status": "error",
                             "message": err
-                        }));
-                    }
+                        }),
+                    );
+                    serde_json::json!({
+                        "success": false,
+                        "error": err
+                    })
                 }
-            });
-            serde_json::json!({ "success": true })
+            }
         }
         Err(e) => {
             serde_json::json!({ "success": false, "error": e.to_string() })
@@ -342,27 +356,23 @@ fn download_dependency(dep_name: String) -> serde_json::Value {
 
 #[tauri::command]
 fn delete_all_dependencies() -> serde_json::Value {
-    // TODO: Replace this stub with the directory deletion logic using `std::fs::remove_dir_all`.
     let mut check = false;
-    
-    for i in &candidate_bin_dirs(){
-        if i.exists(){
+
+    for i in &candidate_bin_dirs() {
+        if i.exists() {
             let _ = std::fs::remove_dir_all(i);
             check = true;
             break;
         }
     }
 
-    if check == true{
-            println!("Deleting all dependencies");
-            serde_json::json!({ "success": true })
-        }
-
-    else {
-            println!("Error occured, could not locate bin folder with dependencies, required manual intervension!!!");
-            serde_json::json!({ "Failure": true })
-        }
-     
+    if check == true {
+        println!("Deleting all dependencies");
+        serde_json::json!({ "success": true })
+    } else {
+        println!("Error occured, could not locate bin folder with dependencies, required manual intervension!!!");
+        serde_json::json!({ "Failure": true })
+    }
 }
 
 #[tauri::command]
@@ -414,9 +424,95 @@ fn window_start_dragging(window: tauri::Window) {
     let _ = window.start_dragging();
 }
 
+#[derive(serde::Serialize)]
+struct InitStatus {
+    first_run: bool,
+    recreated: bool,
+    paths: Vec<String>,
+}
+
+#[tauri::command]
+fn initialize_output_directories(app: tauri::AppHandle) -> Result<InitStatus, String> {
+    let home = std::env::var("HOME")
+        .or_else(|_| std::env::var("USERPROFILE"))
+        .map_err(|e| format!("Could not resolve user home directory: {}", e))?;
+    let home_path = std::path::PathBuf::from(home);
+    let converted_files_dir = home_path.join("Converted Files");
+
+    let subdirs = vec!["Videos", "Audio", "Images", "Documents"];
+
+    let app_config_dir = app.path().app_config_dir().map_err(|e| e.to_string())?;
+    if !app_config_dir.exists() {
+        std::fs::create_dir_all(&app_config_dir).map_err(|e| format!("Failed to create config dir: {}", e))?;
+    }
+    let flag_file = app_config_dir.join("init_flag.txt");
+
+    let previously_initialized = flag_file.exists();
+    let mut missing = false;
+    for sub in &subdirs {
+        if !converted_files_dir.join(sub).exists() {
+            missing = true;
+            break;
+        }
+    }
+
+    let mut first_run = false;
+    let mut recreated = false;
+
+    if missing {
+        if previously_initialized {
+            recreated = true;
+        } else {
+            first_run = true;
+        }
+
+        for sub in &subdirs {
+            let path = converted_files_dir.join(sub);
+            std::fs::create_dir_all(&path).map_err(|e| format!("Failed to create output subdirectory {}: {}", sub, e))?;
+        }
+
+        if !previously_initialized {
+            std::fs::write(&flag_file, "initialized").map_err(|e| format!("Failed to write initialization flag: {}", e))?;
+        }
+    }
+
+    let paths = subdirs.iter()
+        .map(|sub| converted_files_dir.join(sub).to_string_lossy().into_owned())
+        .collect();
+
+    Ok(InitStatus {
+        first_run,
+        recreated,
+        paths,
+    })
+}
+
+#[tauri::command]
+fn get_file_size(path: String) -> Result<u64, String> {
+    std::fs::metadata(&path)
+        .map(|m| m.len())
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn open_default_file_manager() -> Result<(), String> {
+    let home = std::env::var("HOME")
+        .or_else(|_| std::env::var("USERPROFILE"))
+        .map_err(|e| format!("Could not resolve user home directory: {}", e))?;
+    
+    #[cfg(target_os = "linux")]
+    let _ = std::process::Command::new("xdg-open").arg(home).spawn();
+    
+    #[cfg(target_os = "windows")]
+    let _ = std::process::Command::new("explorer").arg(home).spawn();
+    
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
             #[cfg(target_os = "linux")]
@@ -442,7 +538,10 @@ pub fn run() {
             window_maximize,
             window_close,
             window_start_dragging,
-            show_item_in_folder
+            show_item_in_folder,
+            initialize_output_directories,
+            open_default_file_manager,
+            get_file_size
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

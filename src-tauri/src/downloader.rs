@@ -14,13 +14,6 @@ use std::path::Path;
 use curl::easy::Easy;
 use std::io::Write;
 use std::process::Command;
-/// TODO: Define a struct or constant mapping for dependency configurations.
-/// In TypeScript, we had: CONSTANT DOWNLOAD_URLS = Dictionary mapping dependency names to URLs
-/// In Rust, you can define a struct:
-/// struct DependencyConfig {
-///     url: &'static str,
-///     extract_type: &'static str, // "zip", "7z", or "pip"
-/// }
 
 #[allow(dead_code)]
 struct DependencyConfig {
@@ -28,17 +21,7 @@ struct DependencyConfig {
     extract_type: &'static str, 
 }
 
-/// TODO: Implement a function to download a file from a URL.
-/// Tip: For a beginner-friendly approach, you can spawn a system command (like `curl` or `powershell -Command Invoke-WebRequest`) 
-/// using `std::process::Command`. 
-/// For a pure-Rust approach later, you can learn about the `reqwest` crate.
-///
-/// Signature idea:
-/// pub fn download_file(url: &str, destination: &Path) -> Result<(), String> {
-///     // Your implementation here
-/// }
 pub fn download_file(url: &str, destination: &Path) -> Result<(), String> {
-    // TODO: Write code to download file
     // 1. Log the download start
     println!("Starting download for: {}", url);
     // 2. Spawn curl or powershell to download the file to the destination path
@@ -48,6 +31,9 @@ pub fn download_file(url: &str, destination: &Path) -> Result<(), String> {
     // 2. Initialize the curl handle
     let mut handle = Easy::new();
     handle.url(url).map_err(|e| e.to_string())?;
+    
+    // Enable redirect following (crucial for GitHub Releases and SourceForge URLs)
+    handle.follow_location(true).map_err(|e| e.to_string())?;
 
     // Stream data from the URL directly into the file
     handle.write_function(move |data| {
@@ -70,14 +56,6 @@ pub fn download_file(url: &str, destination: &Path) -> Result<(), String> {
     
 }
 
-/// TODO: Implement a function to extract a ZIP archive.
-/// Tip: On Windows, you can spawn PowerShell's `Expand-Archive` command:
-/// `powershell -Command Expand-Archive -Path <zip_path> -DestinationPath <dest_dir> -Force`
-///
-/// Signature idea:
-/// pub fn extract_dependency(zip_path: &Path, dest_dir: &Path) -> Result<(), String> {
-///     // Your implementation here
-/// }
 pub fn extract_dependency(zip_path: &Path, dest_dir: &Path) -> Result<(), String> {
     // 1. Create target folder if it doesn't exist
     match fs::create_dir_all(dest_dir) {
@@ -183,18 +161,20 @@ fn find_and_move_exe(current_dir: &Path, final_dir: &Path) {
 }
 
 
-/// TODO: Implement Python Pip package installer helper.
-/// This runs `python -m pip install <package_name>` to install libraries like `pdf2docx`.
 pub fn install_pip_package(package_name: &str) -> Result<(), String> {
-    // TODO: Write code to spawn a command `python -m pip install <package_name>`
-    // Check if python command is available first!
-
-    let status = Command::new("python")
-        .arg("-m")
+    let mut cmd = Command::new("python");
+    cmd.arg("-m")
         .arg("pip")
         .arg("install")
-        .arg(package_name)
-        .status();
+        .arg(package_name);
+
+    // Bypass PEP 668 restriction on modern Linux/macOS environments
+    #[cfg(not(target_os = "windows"))]
+    {
+        cmd.arg("--break-system-packages");
+    }
+
+    let status = cmd.status();
 
     match status {
         Ok(exit_status) => {
@@ -234,7 +214,7 @@ pub fn handle_download_dependency(dep_name: String) -> Result<(), String> {
             #[cfg(target_os = "windows")]
             { ("https://sourceforge.net/projects/exiftool/files/exiftool-13.52_64.zip/download", "zip") }
             #[cfg(not(target_os = "windows"))]
-            { ("https://exiftool.org/Image-ExifTool-13.52.tar.gz", "tar.gz") }
+            { ("https://sourceforge.net/projects/exiftool/files/Image-ExifTool-13.59.tar.gz/download", "tar.gz") }
         }
         "imagemagick" => {
             #[cfg(target_os = "windows")]

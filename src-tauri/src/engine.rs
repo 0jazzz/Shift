@@ -16,8 +16,7 @@ use std::process::Command;
 use serde::{Serialize, Deserialize};
 use tauri::Emitter; // Note: Tauri Emitter is used to emit events back to the frontend
 
-/// TODO: Define a struct representing a Conversion Task payload sent from React.
-/// Annotate it with `#[derive(Serialize, Deserialize, Debug, Clone)]`
+
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct ConversionTask {
     pub task_id: String,
@@ -27,20 +26,7 @@ pub struct ConversionTask {
     pub metadata: Option<crate::metadata::FileMetadata>,
 }
 
-/// TODO: Implement a function to execute a single step of the conversion chain.
-/// This will run the specified converter (ffmpeg, imagemagick, pandoc, etc.) 
-/// on the input file and save it to the output path.
-///
-/// Signature idea:
-/// pub fn execute_step(
-///     input_path: &Path,
-///     output_path: &Path,
-///     converter: &str,
-///     metadata: Option<&crate::metadata::FileMetadata>,
-///     on_progress: impl Fn(f32) + Send + 'static,
-/// ) -> Result<(), String> {
-///     // Your implementation here
-/// }
+
 pub fn execute_step(
     input_path: &Path,
     output_path: &Path,

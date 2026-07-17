@@ -3,19 +3,12 @@
 // This module handles reading and writing metadata (Exif, ID3, document info)
 // using ExifTool, FFprobe, or FFmpeg commands.
 //
-// Rust concepts you will learn here:
-// - Struct definition and deserialization with `serde` (Chapter 5 + Serde docs)
-// - HashMaps for dynamic key-value storage (Chapter 8)
-// - Spawning child processes and capturing JSON stdout (Chapter 12 + std::process)
 
 use std::collections::HashMap;
 use std::path::Path;
 use serde::{Deserialize, Serialize};
 
-/// TODO: Define a struct representing normalized file metadata.
-/// In TypeScript, we had fields like title, artist, album, etc.
-/// Annotate this with `#[derive(Serialize, Deserialize, Debug, Clone)]`
-/// so that Tauri/Serde can serialize it to JSON for the frontend.
+
 #[derive(Serialize, Deserialize, Debug, Clone, Default)]
 pub struct FileMetadata {
     pub title: Option<String>,
@@ -29,9 +22,7 @@ pub struct FileMetadata {
     pub extra_tags: HashMap<String, String>,
 }
 
-/// TODO: Implement helper to detect if a file is a media format (video/audio).
-/// This helps decide if we should fallback to ffprobe when exiftool is missing.
-/// Tip: Use `path.extension()` to get the file extension and compare it to known values.
+
 pub fn is_likely_media(file_path: &Path) -> bool {
     if let Some(ext) = file_path.extension().and_then(|e| e.to_str()) {
         matches!(

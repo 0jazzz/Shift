@@ -14,7 +14,7 @@
 use std::collections::{HashMap, VecDeque, HashSet};
 use serde::{Serialize, Deserialize};
 
-/// TODO: Define a struct representing a converter edge in the graph.
+
 /// An edge points to a `target` format and specifies the `converter` engine.
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Edge {
@@ -22,14 +22,14 @@ pub struct Edge {
     pub converter: String, // "ffmpeg", "imagemagick", "pandoc", "libreoffice", "python", "xpdf"
 }
 
-/// TODO: Define the ConversionGraph struct holding the adjacency list.
+
 pub struct ConversionGraph {
     // A map from source format (e.g., "docx") to list of possible target edges (e.g., [{"target": "pdf", "converter": "libreoffice"}])
     pub adjacency_list: HashMap<String, Vec<Edge>>,
 }
 
 impl ConversionGraph {
-    /// TODO: Implement a constructor that initializes the graph and populates it.
+
     pub fn new() -> Self {
         let mut graph = ConversionGraph {
             adjacency_list: HashMap::new(),
