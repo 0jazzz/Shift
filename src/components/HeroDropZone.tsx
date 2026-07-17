@@ -22,24 +22,22 @@ export default function HeroDropZone({ onFileDrop }: HeroDropZoneProps) {
     const handleDrop = useCallback((e: React.DragEvent) => {
         e.preventDefault()
         setIsDragging(false)
-
-        if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+        // Handled by native window listener in App.tsx to avoid duplicate entries in desktop.
+        // Keep fallback only for browser-only environments to pass compilation checks.
+        if (!window.electron && e.dataTransfer.files && e.dataTransfer.files.length > 0) {
             onFileDrop?.(e.dataTransfer.files)
         }
     }, [onFileDrop])
 
-    const handleClick = useCallback(() => {
-        const input = document.createElement('input')
-        input.type = 'file'
-        input.multiple = true
-        input.onchange = (e) => {
-            const files = (e.target as HTMLInputElement).files
-            if (files && files.length > 0) {
-                onFileDrop?.(files)
+    const handleClick = useCallback(async () => {
+        if (window.electron?.invoke) {
+            try {
+                await window.electron.invoke('openDefaultFileManager')
+            } catch (e) {
+                console.error('Failed to open default file manager:', e)
             }
         }
-        input.click()
-    }, [onFileDrop])
+    }, [])
 
     return (
         <motion.div

@@ -1,13 +1,14 @@
-import { lazy, Suspense, useState, useEffect, useRef, useCallback } from 'react'
+import { lazy, Suspense, useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import SplashScreen from './components/SplashScreen'
 
 const Header = lazy(() => import('./components/Header'))
 const HeroDropZone = lazy(() => import('./components/HeroDropZone'))
 const TaskList = lazy(() => import('./components/TaskList'))
-const SettingsDrawer = lazy(() => import('./components/SettingsDrawer'))
+import SettingsDrawer from './components/SettingsDrawer'
 const SmartDropdown = lazy(() => import('./components/SmartDropdown'))
 const FirstRunModal = lazy(() => import('./components/FirstRunModal'))
 const Onboarding = lazy(() => import('./components/Onboarding'))
+import { getCurrentWindow } from '@tauri-apps/api/window'
 const LogsPanel = lazy(() => import('./components/LogsPanel'))
 const ArchivePanel = lazy(() => import('./components/ArchivePanel'))
 const MetadataModal = lazy(() => import('./components/MetadataModal'))
@@ -16,7 +17,7 @@ import { Play, Trash2, Loader2, Square } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 
 function App() {
-    const { tasks, addTask, updateTask, removeTask, clearCompleted, addLog, addToArchive, removeAllTasks, hasCompletedOnboarding, editingTaskId, setEditingTask } = useAppStore()
+    const { tasks, addTask, updateTask, removeTask, clearCompleted, addLog, addToArchive, removeAllTasks, hasCompletedOnboarding, editingTaskId, setEditingTask, setOutputPath } = useAppStore()
     const [missingDeps, setMissingDeps] = useState<string[]>([])
     const [showSplash, setShowSplash] = useState(true)
     const [appReady, setAppReady] = useState(false)
@@ -25,7 +26,17 @@ function App() {
     const [isConverting, setIsConverting] = useState(false)
     const [isPaused, setIsPaused] = useState(false)
     const [showQuitConfirm, setShowQuitConfirm] = useState(false)
+    const [initPopup, setInitPopup] = useState<{ type: 'info' | 'warning', message: string } | null>(null)
     const [batchFormat, setBatchFormat] = useState('Select')
+    
+    // Memoized overall progress calculation to prevent UI hitching with thousands of tasks
+    const overallProgress = useMemo(() => {
+        if (!isConverting && !isPaused) return 0
+        const activeTasks = tasks.filter(t => t.status !== 'ready' || isConverting)
+        if (activeTasks.length === 0) return 0
+        const total = activeTasks.reduce((acc, t) => acc + (t.status === 'done' ? 100 : t.progress), 0)
+        return Math.round((total / (activeTasks.length * 100)) * 100)
+    }, [tasks, isConverting, isPaused])
     const shouldStop = useRef(false)
     const pausedRef = useRef(false)
     const pauseResolver = useRef<((value: void | PromiseLike<void>) => void) | null>(null)
@@ -61,6 +72,37 @@ function App() {
         const timeout = setTimeout(checkDeps, 100)
         return () => clearTimeout(timeout)
     }, [])
+
+    useEffect(() => {
+        const initDirs = async () => {
+            if (window.electron?.invoke) {
+                try {
+                    const status = await window.electron.invoke<{ first_run: boolean; recreated: boolean; paths: string[] }>('initializeOutputDirectories')
+                    if (status && status.paths && status.paths.length >= 4) {
+                        setOutputPath('video', status.paths[0])
+                        setOutputPath('audio', status.paths[1])
+                        setOutputPath('image', status.paths[2])
+                        setOutputPath('doc', status.paths[3])
+
+                        if (status.first_run) {
+                            setInitPopup({
+                                type: 'info',
+                                message: `Output directories created at ~/Converted Files. These folders will be used to store your converted files.`
+                            })
+                        } else if (status.recreated) {
+                            setInitPopup({
+                                type: 'warning',
+                                message: `Warning: The Converted Files directory was deleted or moved! We have recreated the folders, but any files in them could be lost.`
+                            })
+                        }
+                    }
+                } catch (e) {
+                    console.error('Failed to initialize output directories:', e)
+                }
+            }
+        }
+        initDirs()
+    }, [setOutputPath])
 
     // ... (rest of effects and handlers) ...
     // Listen for conversion progress
@@ -102,18 +144,61 @@ function App() {
                 availableFormats = ['MP4', 'MKV', 'MP3', 'JPG', 'PNG', 'PDF', 'DOCX']
             }
 
+            let originalSize = file.size
+            if (filePath && filePath !== file.name && window.electron?.invoke) {
+                try {
+                    const resolvedSize = await window.electron.invoke<number>('getFileSize', filePath)
+                    if (typeof resolvedSize === 'number') {
+                        originalSize = resolvedSize
+                    }
+                } catch (e) {
+                    console.error('Failed to resolve file size', e)
+                }
+            }
+
             const newTask: Task = {
                 id: crypto.randomUUID(),
                 file: { name: file.name, path: filePath },
                 status: 'ready',
                 progress: 0,
                 targetFormat: 'Select',
-                originalSize: file.size,
+                originalSize,
                 availableFormats
             }
             addTask(newTask)
         }
     }, [addTask, addLog])
+
+    // Listen for native file drops
+    useEffect(() => {
+        let unlisten: (() => void) | null = null
+        
+        const setupDropListener = async () => {
+            const unsub = await getCurrentWindow().onDragDropEvent((event) => {
+                if (event.payload.type === 'drop') {
+                    const paths = event.payload.paths
+                    const mockFiles = paths.map(p => {
+                        const name = p.split('/').pop()?.split('\\').pop() || p
+                        return {
+                            name,
+                            path: p,
+                            size: 0,
+                        } as any
+                    })
+                    handleFileDrop(mockFiles as any)
+                }
+            })
+            unlisten = unsub
+        }
+
+        setupDropListener().catch(e => console.error('Failed to setup native drag-drop listener:', e))
+
+        return () => {
+            if (unlisten) {
+                unlisten()
+            }
+        }
+    }, [handleFileDrop])
 
     const handleStop = () => {
         if (isPaused) {
@@ -192,7 +277,8 @@ function App() {
                 else if (['mp3', 'wav', 'flac', 'aac', 'ogg'].includes(fmt)) typeFolder = 'Audio'
                 else if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp'].includes(fmt)) typeFolder = 'Images'
 
-                outputDir = `${sourceDir}\\Converted Files\\${typeFolder}`
+                const separator = filePath.includes('\\') ? '\\' : '/'
+                outputDir = `${sourceDir}${separator}Converted Files${separator}${typeFolder}`
             }
 
             try {
@@ -422,12 +508,7 @@ function App() {
                                                             className="absolute inset-y-0 left-0 bg-accent/90"
                                                             initial={{ width: 0 }}
                                                             animate={{
-                                                                width: `${(() => {
-                                                                    const activeTasks = tasks.filter(t => t.status !== 'ready' || isConverting)
-                                                                    if (activeTasks.length === 0) return 0
-                                                                    const total = activeTasks.reduce((acc, t) => acc + (t.status === 'done' ? 100 : t.progress), 0)
-                                                                    return (total / (activeTasks.length * 100)) * 100
-                                                                })()}%`
+                                                                width: `${overallProgress}%`
                                                             }}
                                                             transition={{ type: "spring", stiffness: 100, damping: 20 }}
                                                         />
@@ -436,12 +517,7 @@ function App() {
                                                     <span className="relative z-10 flex items-center gap-2 drop-shadow-md">
                                                         {!isPaused && <Loader2 className="w-4 h-4 animate-spin" />}
                                                         {tasks.length > 1
-                                                            ? (isPaused ? 'Resume Conversion' : `Converting... ${Math.round((() => {
-                                                                const activeTasks = tasks.filter(t => t.status !== 'ready' || isConverting)
-                                                                if (activeTasks.length === 0) return 0
-                                                                const total = activeTasks.reduce((acc, t) => acc + (t.status === 'done' ? 100 : t.progress), 0)
-                                                                return (total / (activeTasks.length * 100)) * 100
-                                                            })())}%`)
+                                                            ? (isPaused ? 'Resume Conversion' : `Converting... ${overallProgress}%`)
                                                             : (isPaused ? 'Resume' : 'Converting...')}
                                                     </span>
                                                 </>
@@ -527,6 +603,24 @@ function App() {
                                     missingDeps={missingDeps}
                                     onDismiss={() => setShowFirstRun(false)}
                                 />
+                            )}
+                            
+                            {/* TODO: Implement the warning/info popup display for folder initialization. */}
+                            {initPopup && (
+                                <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm">
+                                    <div className="bg-[#111] border border-[#222] rounded-lg p-6 max-w-sm w-full mx-4 shadow-xl">
+                                        <h3 className={`text-base font-bold mb-2 ${initPopup.type === 'warning' ? 'text-yellow-400' : 'text-blue-400'}`}>
+                                            {initPopup.type === 'warning' ? 'Warning' : 'Output Folder Status'}
+                                        </h3>
+                                        <p className="text-xs text-neutral-400 mb-4 leading-relaxed">{initPopup.message}</p>
+                                        <button
+                                            onClick={() => setInitPopup(null)}
+                                            className="w-full py-2 bg-blue-600 hover:bg-blue-500 rounded text-xs text-white transition-colors"
+                                        >
+                                            Dismiss
+                                        </button>
+                                    </div>
+                                </div>
                             )}
                         </>
 

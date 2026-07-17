@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
-import { motion, AnimatePresence } from 'framer-motion'
-import { X, Folder, Settings, HardDrive, Download, Check, AlertTriangle, RefreshCw, Monitor } from 'lucide-react'
+import { motion } from 'framer-motion'
+import { X, Folder, Settings, HardDrive, Download, Check, AlertTriangle, RefreshCw, Monitor, ChevronDown } from 'lucide-react'
 import { useAppStore } from '../store/appStore'
 
 // ... existing interfaces ...
@@ -172,26 +172,21 @@ export default function SettingsDrawer() {
     }
 
     return (
-        <AnimatePresence>
-            {isSettingsOpen && (
-                <>
-                    {/* Backdrop */}
-                    <motion.div
-                        initial={{ opacity: 0 }}
-                        animate={{ opacity: 1 }}
-                        exit={{ opacity: 0 }}
-                        onClick={toggleSettings}
-                        className="fixed inset-0 bg-black/60 backdrop-blur-sm z-40"
-                    />
+        <>
+            {/* Backdrop */}
+            <div
+                onClick={toggleSettings}
+                className={`fixed inset-0 bg-black/60 z-40 transition-opacity duration-200 ${
+                    isSettingsOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
+                }`}
+            />
 
-                    {/* Drawer */}
-                    <motion.div
-                        initial={{ x: '100%' }}
-                        animate={{ x: 0 }}
-                        exit={{ x: '100%' }}
-                        transition={{ type: 'spring', damping: 25, stiffness: 200 }}
-                        className="fixed right-0 top-0 h-full w-96 bg-[#0a0a0a] border-l border-[#1a1a1a] z-50 flex flex-col font-mono text-xs overflow-hidden shadow-2xl"
-                    >
+            {/* Drawer */}
+            <div
+                className={`fixed right-0 top-0 h-full w-96 bg-[#0a0a0a] border-l border-[#1a1a1a] z-50 flex flex-col font-mono text-xs overflow-hidden shadow-2xl transition-transform duration-200 ease-out will-change-transform ${
+                    isSettingsOpen ? 'translate-x-0' : 'translate-x-full'
+                }`}
+            >
                         {/* Header */}
                         <div className="h-9 bg-[#111] border-b border-[#1a1a1a] flex items-center px-3 justify-between">
                             <div className="flex items-center gap-2 text-neutral-400">
@@ -326,31 +321,34 @@ export default function SettingsDrawer() {
                             {/* GPU Selection */}
                             <Section label="GPU_ACCELERATION" icon={Monitor} tooltip="Select which Graphics Processing Unit to use." id="tour-gpu-settings">
                                 <div className="relative group">
-                                    <select
-                                        value={gpuPreference || ''}
-                                        onChange={(e) => setGpuPreference(e.target.value)}
-                                        className="w-full bg-[#111] border border-[#222] rounded px-3 py-2 text-neutral-300 focus:outline-none focus:border-blue-500/50 transition-colors cursor-pointer hover:bg-[#161616]"
-                                    >
-                                        {gpus.map((gpu, i) => (
-                                            <option 
-                                                key={i} 
-                                                value={gpu.name}
-                                                className="bg-[#111] text-neutral-300"
-                                                style={{ backgroundColor: '#111', color: '#d4d4d4' }}
-                                            >
-                                                {gpu.name}
-                                            </option>
-                                        ))}
-                                        {gpus.length === 0 && (
-                                            <option 
-                                                value="" 
-                                                className="bg-[#111] text-neutral-300"
-                                                style={{ backgroundColor: '#111', color: '#d4d4d4' }}
-                                            >
-                                                Detecting GPUs...
-                                            </option>
-                                        )}
-                                    </select>
+                                    <div className="relative">
+                                        <select
+                                            value={gpuPreference || ''}
+                                            onChange={(e) => setGpuPreference(e.target.value)}
+                                            className="w-full bg-[#111] border border-[#222] rounded px-3 py-2 text-neutral-300 focus:outline-none focus:border-blue-500/50 transition-colors cursor-pointer hover:bg-[#161616] appearance-none pr-8"
+                                        >
+                                            {gpus.map((gpu, i) => (
+                                                <option 
+                                                    key={i} 
+                                                    value={gpu.name}
+                                                    className="bg-[#111] text-neutral-300"
+                                                    style={{ backgroundColor: '#111', color: '#d4d4d4' }}
+                                                >
+                                                    {gpu.name}
+                                                </option>
+                                            ))}
+                                            {gpus.length === 0 && (
+                                                <option 
+                                                    value="" 
+                                                    className="bg-[#111] text-neutral-300"
+                                                    style={{ backgroundColor: '#111', color: '#d4d4d4' }}
+                                                >
+                                                    Detecting GPUs...
+                                                </option>
+                                            )}
+                                        </select>
+                                        <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-neutral-500 pointer-events-none" />
+                                    </div>
                                     <Tooltip text="Select specific GPU for hardware encoding (NVENC/AMF/QSV)." />
                                 </div>
                                 <p className="text-neutral-600 mt-2 text-[10px]">
@@ -438,12 +436,7 @@ export default function SettingsDrawer() {
                         <div className="p-3 border-t border-[#1a1a1a] bg-[#080808]">
                             <p className="text-neutral-600 text-center">Shift v1.0.0 | Windows</p>
                         </div>
-                    </motion.div>
-                </>
-            )
-            }
-        </AnimatePresence >
+            </div>
+        </>
     )
 }
-
-
