@@ -1,19 +1,12 @@
 // CONVERSION GRAPH MODULE
 //
-// This module defines the conversion path finder. Since we have multiple 
+// This module defines the conversion path finder. Since we have multiple
 // engines (ffmpeg, imagemagick, pandoc, libreoffice, python, xpdf) that can
 // convert between specific formats, we build an adjacency list representing
 // possible conversions and perform a BFS search to find the shortest converter chain.
-//
-// Rust concepts you will learn here:
-// - Custom Structs and Struct initialization (Chapter 5)
-// - HashMaps (`std::collections::HashMap`) and Vectors (`Vec<T>`) (Chapter 8)
-// - Enums for type safety (Chapter 6)
-// - Implementing algorithms (BFS) in Rust (Loops, collections, option types)
 
-use std::collections::{HashMap, VecDeque, HashSet};
-use serde::{Serialize, Deserialize};
-
+use serde::{Deserialize, Serialize};
+use std::collections::{HashMap, HashSet, VecDeque};
 
 /// An edge points to a `target` format and specifies the `converter` engine.
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -22,14 +15,12 @@ pub struct Edge {
     pub converter: String, // "ffmpeg", "imagemagick", "pandoc", "libreoffice", "python", "xpdf"
 }
 
-
 pub struct ConversionGraph {
     // A map from source format (e.g., "docx") to list of possible target edges (e.g., [{"target": "pdf", "converter": "libreoffice"}])
     pub adjacency_list: HashMap<String, Vec<Edge>>,
 }
 
 impl ConversionGraph {
-
     pub fn new() -> Self {
         let mut graph = ConversionGraph {
             adjacency_list: HashMap::new(),
@@ -78,7 +69,9 @@ impl ConversionGraph {
         }
 
         // Image formats (ImageMagick)
-        let image_formats = vec!["jpg", "jpeg", "png", "webp", "gif", "bmp", "tiff", "ico", "svg"];
+        let image_formats = vec![
+            "jpg", "jpeg", "png", "webp", "gif", "bmp", "tiff", "ico", "svg",
+        ];
         for src in &image_formats {
             for dst in &image_formats {
                 if src != dst {

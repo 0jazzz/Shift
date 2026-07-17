@@ -3,21 +3,14 @@
 // This module handles executing individual conversion steps (e.g. running
 // ffmpeg on a file) and chaining multiple steps together using the ConversionGraph
 // to execute multi-step conversions (e.g. PDF -> PNG -> JPEG).
-//
-// Rust concepts you will learn here:
-// - Spawning background threads with `std::thread::spawn` (Chapter 16)
-// - Communicating between threads (Tauri Events / emitters)
-// - String formatting and building command args (Chapter 8 + Chapter 10)
-// - Matching patterns and enums (Chapter 6)
-// - Parsing stream buffers (line-by-line output of child processes)
 
+use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use serde::{Serialize, Deserialize};
 use tauri::Emitter; // Note: Tauri Emitter is used to emit events back to the frontend
 
-
 #[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
 pub struct ConversionTask {
     pub task_id: String,
     pub input_path: String,
@@ -25,7 +18,6 @@ pub struct ConversionTask {
     pub output_dir: String,
     pub metadata: Option<crate::metadata::FileMetadata>,
 }
-
 
 pub fn execute_step(
     input_path: &Path,
@@ -36,28 +28,51 @@ pub fn execute_step(
 ) -> Result<(), String> {
     let binary = match converter {
         "ffmpeg" => crate::find_binary(&["ffmpeg.exe", "ffmpeg"], &["ffmpeg"]),
-        "imagemagick" => crate::find_binary(&["magick.exe", "magick", "convert.exe", "convert"], &["magick", "convert"]),
+        "imagemagick" => crate::find_binary(
+            &["magick.exe", "magick", "convert.exe", "convert"],
+            &["magick", "convert"],
+        ),
         "pandoc" => crate::find_binary(&["pandoc.exe", "pandoc"], &["pandoc"]),
         "libreoffice" => crate::find_binary(&["soffice.exe", "soffice"], &["soffice"]),
         "xpdf" => crate::find_binary(&["pdftotext.exe", "pdftotext"], &["pdftotext"]),
-        "python" => crate::find_binary(&["python.exe", "python", "python3.exe", "python3"], &["python", "python3", "py"]),
+        "python" => crate::find_binary(
+            &["python.exe", "python", "python3.exe", "python3"],
+            &["python", "python3", "py"],
+        ),
         _ => return Err(format!("Unknown converter: {}", converter)),
     };
 
-    let binary_path = binary.ok_or_else(|| format!("Required binary for {} not found", converter))?;
+    let binary_path =
+        binary.ok_or_else(|| format!("Required binary for {} not found", converter))?;
 
     let mut cmd = Command::new(&binary_path);
-    
+
     match converter {
         "ffmpeg" => {
-            cmd.arg("-i").arg(input_path).arg("-y").arg("-progress").arg("pipe:1");
+            cmd.arg("-i")
+                .arg(input_path)
+                .arg("-y")
+                .arg("-progress")
+                .arg("pipe:1");
             if let Some(m) = metadata {
-                if let Some(ref t) = m.title { cmd.arg("-metadata").arg(format!("title={}", t)); }
-                if let Some(ref a) = m.artist { cmd.arg("-metadata").arg(format!("artist={}", a)); }
-                if let Some(ref alb) = m.album { cmd.arg("-metadata").arg(format!("album={}", alb)); }
-                if let Some(ref g) = m.genre { cmd.arg("-metadata").arg(format!("genre={}", g)); }
-                if let Some(ref y) = m.year { cmd.arg("-metadata").arg(format!("date={}", y)); }
-                if let Some(ref c) = m.comment { cmd.arg("-metadata").arg(format!("comment={}", c)); }
+                if let Some(ref t) = m.title {
+                    cmd.arg("-metadata").arg(format!("title={}", t));
+                }
+                if let Some(ref a) = m.artist {
+                    cmd.arg("-metadata").arg(format!("artist={}", a));
+                }
+                if let Some(ref alb) = m.album {
+                    cmd.arg("-metadata").arg(format!("album={}", alb));
+                }
+                if let Some(ref g) = m.genre {
+                    cmd.arg("-metadata").arg(format!("genre={}", g));
+                }
+                if let Some(ref y) = m.year {
+                    cmd.arg("-metadata").arg(format!("date={}", y));
+                }
+                if let Some(ref c) = m.comment {
+                    cmd.arg("-metadata").arg(format!("comment={}", c));
+                }
             }
             cmd.arg(output_path);
         }
@@ -69,14 +84,23 @@ pub fn execute_step(
         }
         "libreoffice" => {
             let out_dir = output_path.parent().unwrap_or_else(|| Path::new("."));
-            let out_ext = output_path.extension().and_then(|e| e.to_str()).unwrap_or("pdf");
+            let out_ext = output_path
+                .extension()
+                .and_then(|e| e.to_str())
+                .unwrap_or("pdf");
             cmd.arg("--headless")
-               .arg("--convert-to").arg(out_ext)
-               .arg("--outdir").arg(out_dir)
-               .arg(input_path);
+                .arg("--convert-to")
+                .arg(out_ext)
+                .arg("--outdir")
+                .arg(out_dir)
+                .arg(input_path);
         }
         "xpdf" => {
-            cmd.arg("-enc").arg("UTF-8").arg("-layout").arg(input_path).arg(output_path);
+            cmd.arg("-enc")
+                .arg("UTF-8")
+                .arg("-layout")
+                .arg(input_path)
+                .arg(output_path);
         }
         "python" => {
             let py_input = input_path.to_string_lossy().replace('\\', "\\\\");
@@ -94,7 +118,9 @@ pub fn execute_step(
     cmd.stdout(std::process::Stdio::piped());
     cmd.stderr(std::process::Stdio::piped());
 
-    let mut child = cmd.spawn().map_err(|e| format!("Failed to spawn {}: {}", converter, e))?;
+    let mut child = cmd
+        .spawn()
+        .map_err(|e| format!("Failed to spawn {}: {}", converter, e))?;
 
     // Parse FFmpeg progress
     if converter == "ffmpeg" {
@@ -116,7 +142,7 @@ pub fn execute_step(
     }
 
     let status = child.wait().map_err(|e| format!("Process error: {}", e))?;
-    
+
     if status.success() {
         if converter == "libreoffice" {
             let out_dir = output_path.parent().unwrap_or_else(|| Path::new("."));
@@ -138,10 +164,7 @@ pub fn execute_step(
     }
 }
 
-pub fn convert_file(
-    task: ConversionTask,
-    window: tauri::Window,
-) -> Result<PathBuf, String> {
+pub fn convert_file(task: ConversionTask, window: tauri::Window) -> Result<PathBuf, String> {
     use crate::conversion_graph::ConversionGraph;
     use std::sync::{Arc, Mutex};
 
@@ -185,7 +208,7 @@ pub fn convert_file(
         };
 
         let step_progress = (i as f32 / total_steps as f32) * 100.0;
-        
+
         let _ = window.emit(
             "fromMain",
             serde_json::json!({
@@ -199,7 +222,7 @@ pub fn convert_file(
         let window_clone = window.clone();
         let task_id_clone = task_id.clone();
         let current_path_val = current_path.lock().unwrap().clone();
-        
+
         let on_progress = move |percent: f32| {
             let overall = step_progress + (percent / total_steps as f32);
             let _ = window_clone.emit(
@@ -217,7 +240,11 @@ pub fn convert_file(
             &current_path_val,
             &step_output_path,
             &step.converter,
-            if is_last { task.metadata.as_ref() } else { None },
+            if is_last {
+                task.metadata.as_ref()
+            } else {
+                None
+            },
             on_progress,
         )?;
 

@@ -1,24 +1,19 @@
 // DOWNLOADER MODULE
 //
-// This module will handle downloading and extracting conversion dependencies 
+// This module will handle downloading and extracting conversion dependencies
 // (like ffmpeg, exiftool, pandoc, etc.) to the local `.bin` folder.
-//
-// Rust concepts you will learn here:
-// - `std::fs` and `std::path` for file and directory manipulation (Chapter 3 + Chapter 12)
-// - `std::process::Command` for running system-level commands (e.g., PowerShell extraction)
-// - Error handling with `Result` and `Option` (Chapter 9)
-// - Third-party HTTP requests (using crates like `reqwest` or running curl/powershell commands)
-use std::fs::File;
-use std::fs;
-use std::path::Path;
+
 use curl::easy::Easy;
+use std::fs;
+use std::fs::File;
 use std::io::Write;
+use std::path::Path;
 use std::process::Command;
 
 #[allow(dead_code)]
 struct DependencyConfig {
     url: &'static str,
-    extract_type: &'static str, 
+    extract_type: &'static str,
 }
 
 pub fn download_file(url: &str, destination: &Path) -> Result<(), String> {
@@ -31,29 +26,30 @@ pub fn download_file(url: &str, destination: &Path) -> Result<(), String> {
     // 2. Initialize the curl handle
     let mut handle = Easy::new();
     handle.url(url).map_err(|e| e.to_string())?;
-    
+
     // Enable redirect following (crucial for GitHub Releases and SourceForge URLs)
     handle.follow_location(true).map_err(|e| e.to_string())?;
 
     // Stream data from the URL directly into the file
-    handle.write_function(move |data| {
-        match file.write_all(data) {
+    handle
+        .write_function(move |data| match file.write_all(data) {
             Ok(_) => Ok(data.len()),
             Err(e) => {
                 println!("Failed to write to file: {}", e);
                 Err(curl::easy::WriteError::Pause)
             }
-        }
-    }).map_err(|e| e.to_string())?;
+        })
+        .map_err(|e| e.to_string())?;
 
     // Perform the download operation
-    handle.perform().map_err(|e| format!("Download failed: {}", e))?;
+    handle
+        .perform()
+        .map_err(|e| format!("Download failed: {}", e))?;
 
     println!("Download completed successfully to: {:?}", destination);
 
     // 3. Return Ok(()) on success, or Err(error_message) on failure
     Ok(())
-    
 }
 
 pub fn extract_dependency(zip_path: &Path, dest_dir: &Path) -> Result<(), String> {
@@ -62,7 +58,7 @@ pub fn extract_dependency(zip_path: &Path, dest_dir: &Path) -> Result<(), String
         Ok(_) => println!("Directory created successfully."),
         Err(e) => eprintln!("Failed to create directory: {}", e),
     }
-    
+
     // 2. Spawn extraction command depending on target OS
     #[cfg(target_os = "windows")]
     let status = Command::new("powershell")
@@ -104,13 +100,12 @@ pub fn extract_dependency(zip_path: &Path, dest_dir: &Path) -> Result<(), String
 
     match status {
         Ok(exit_status) => {
-            if exit_status.success(){
+            if exit_status.success() {
                 println!("Successfully extracted {:?}", zip_path);
                 // The starting folder to search is dest_dir, and we want the file to land in dest_dir!
                 find_and_move_exe(dest_dir, dest_dir);
                 Ok(())
-            }
-            else {
+            } else {
                 let err_msg = format!("Failed to extract {:?}", zip_path);
                 eprintln!("{}", err_msg);
                 Err(err_msg)
@@ -127,10 +122,10 @@ pub fn extract_dependency(zip_path: &Path, dest_dir: &Path) -> Result<(), String
 // 3. Handle moving nested folders if needed (like FFmpeg's top-level archive directory)
 
 fn find_and_move_exe(current_dir: &Path, final_dir: &Path) {
-    for entry in fs::read_dir(current_dir).unwrap(){
+    for entry in fs::read_dir(current_dir).unwrap() {
         let entry = entry.unwrap();
         let path = entry.path();
-        
+
         let is_executable = {
             #[cfg(target_os = "windows")]
             {
@@ -139,14 +134,13 @@ fn find_and_move_exe(current_dir: &Path, final_dir: &Path) {
             #[cfg(not(target_os = "windows"))]
             {
                 let filename = path.file_name().and_then(|f| f.to_str()).unwrap_or("");
-                path.is_file() && (
-                    filename == "ffmpeg" ||
-                    filename == "exiftool" ||
-                    filename == "pandoc" ||
-                    filename == "pdftotext" ||
-                    filename == "magick" ||
-                    filename == "convert"
-                )
+                path.is_file()
+                    && (filename == "ffmpeg"
+                        || filename == "exiftool"
+                        || filename == "pandoc"
+                        || filename == "pdftotext"
+                        || filename == "magick"
+                        || filename == "convert")
             }
         };
 
@@ -160,13 +154,9 @@ fn find_and_move_exe(current_dir: &Path, final_dir: &Path) {
     }
 }
 
-
 pub fn install_pip_package(package_name: &str) -> Result<(), String> {
     let mut cmd = Command::new("python");
-    cmd.arg("-m")
-        .arg("pip")
-        .arg("install")
-        .arg(package_name);
+    cmd.arg("-m").arg("pip").arg("install").arg(package_name);
 
     // Bypass PEP 668 restriction on modern Linux/macOS environments
     #[cfg(not(target_os = "windows"))]
@@ -178,14 +168,11 @@ pub fn install_pip_package(package_name: &str) -> Result<(), String> {
 
     match status {
         Ok(exit_status) => {
-            if exit_status.success(){
+            if exit_status.success() {
                 println!("Successfully installed {}", package_name);
                 Ok(())
-
-            }
-
-            else {
-                let err_msg = format!("Python failed to install {}" , package_name);
+            } else {
+                let err_msg = format!("Python failed to install {}", package_name);
                 eprintln!("{}", err_msg);
                 Err(err_msg)
             }
@@ -201,38 +188,67 @@ pub fn install_pip_package(package_name: &str) -> Result<(), String> {
 
 pub fn handle_download_dependency(dep_name: String) -> Result<(), String> {
     let name = dep_name.to_lowercase();
-    
+
     // 1. Determine download URL and type depending on `dep_name` and OS
     let (url, _extract_type) = match name.as_str() {
         "ffmpeg" => {
             #[cfg(target_os = "windows")]
-            { ("https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip", "zip") }
+            {
+                (
+                    "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip",
+                    "zip",
+                )
+            }
             #[cfg(not(target_os = "windows"))]
-            { ("https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz", "tar.xz") }
+            {
+                (
+                    "https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz",
+                    "tar.xz",
+                )
+            }
         }
         "exiftool" => {
             #[cfg(target_os = "windows")]
-            { ("https://sourceforge.net/projects/exiftool/files/exiftool-13.52_64.zip/download", "zip") }
+            {
+                ("https://sourceforge.net/projects/exiftool/files/exiftool-13.52_64.zip/download", "zip")
+            }
             #[cfg(not(target_os = "windows"))]
-            { ("https://sourceforge.net/projects/exiftool/files/Image-ExifTool-13.59.tar.gz/download", "tar.gz") }
+            {
+                ("https://sourceforge.net/projects/exiftool/files/Image-ExifTool-13.59.tar.gz/download", "tar.gz")
+            }
         }
         "imagemagick" => {
             #[cfg(target_os = "windows")]
-            { ("https://imagemagick.org/archive/binaries/ImageMagick-7.1.1-29-portable-Q16-x64.zip", "zip") }
+            {
+                ("https://imagemagick.org/archive/binaries/ImageMagick-7.1.1-29-portable-Q16-x64.zip", "zip")
+            }
             #[cfg(not(target_os = "windows"))]
-            { ("", "") }
+            {
+                ("", "")
+            }
         }
         "pandoc" => {
             #[cfg(target_os = "windows")]
-            { ("https://github.com/jgm/pandoc/releases/download/3.8.3/pandoc-3.8.3-windows-x86_64.zip", "zip") }
+            {
+                ("https://github.com/jgm/pandoc/releases/download/3.8.3/pandoc-3.8.3-windows-x86_64.zip", "zip")
+            }
             #[cfg(not(target_os = "windows"))]
-            { ("https://github.com/jgm/pandoc/releases/download/3.8.3/pandoc-3.8.3-linux-amd64.tar.gz", "tar.gz") }
+            {
+                ("https://github.com/jgm/pandoc/releases/download/3.8.3/pandoc-3.8.3-linux-amd64.tar.gz", "tar.gz")
+            }
         }
         "xpdf" => {
             #[cfg(target_os = "windows")]
-            { ("https://dl.xpdfreader.com/xpdf-tools-win-4.06.zip", "zip") }
+            {
+                ("https://dl.xpdfreader.com/xpdf-tools-win-4.06.zip", "zip")
+            }
             #[cfg(not(target_os = "windows"))]
-            { ("https://dl.xpdfreader.com/xpdf-tools-linux-4.06.tar.gz", "tar.gz") }
+            {
+                (
+                    "https://dl.xpdfreader.com/xpdf-tools-linux-4.06.tar.gz",
+                    "tar.gz",
+                )
+            }
         }
         "pdf2docx" => {
             return install_pip_package("pdf2docx");
@@ -241,7 +257,10 @@ pub fn handle_download_dependency(dep_name: String) -> Result<(), String> {
     };
 
     if url.is_empty() {
-        return Err(format!("No download URL available for {} on this platform", dep_name));
+        return Err(format!(
+            "No download URL available for {} on this platform",
+            dep_name
+        ));
     }
 
     // 2. Create the target `.bin` directory if it does not exist
@@ -258,7 +277,7 @@ pub fn handle_download_dependency(dep_name: String) -> Result<(), String> {
     } else {
         "zip"
     };
-    
+
     let temp_file = bin_dir.join(format!("temp_{}.{}", name, file_ext));
     download_file(url, &temp_file)?;
 

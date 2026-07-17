@@ -2,12 +2,10 @@
 //
 // This module handles reading and writing metadata (Exif, ID3, document info)
 // using ExifTool, FFprobe, or FFmpeg commands.
-//
 
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::Path;
-use serde::{Deserialize, Serialize};
-
 
 #[derive(Serialize, Deserialize, Debug, Clone, Default)]
 pub struct FileMetadata {
@@ -17,11 +15,10 @@ pub struct FileMetadata {
     pub genre: Option<String>,
     pub year: Option<String>,
     pub comment: Option<String>,
-    
+
     // For storing any extra tags that don't fit the standard fields
     pub extra_tags: HashMap<String, String>,
 }
-
 
 pub fn is_likely_media(file_path: &Path) -> bool {
     if let Some(ext) = file_path.extension().and_then(|e| e.to_str()) {
@@ -42,7 +39,10 @@ pub fn read_with_exiftool(file_path: &Path, exiftool_path: &Path) -> Result<File
         .map_err(|e| format!("Failed to run ExifTool: {}", e))?;
 
     if !output.status.success() {
-        return Err(format!("ExifTool failed: {}", String::from_utf8_lossy(&output.stderr)));
+        return Err(format!(
+            "ExifTool failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        ));
     }
 
     let parsed: serde_json::Value = serde_json::from_slice(&output.stdout)
@@ -55,15 +55,29 @@ pub fn read_with_exiftool(file_path: &Path, exiftool_path: &Path) -> Result<File
     };
 
     let mut metadata = FileMetadata::default();
-    
-    if let Some(t) = raw.get("Title").and_then(|v| v.as_str()) { metadata.title = Some(t.to_string()); }
-    if let Some(a) = raw.get("Artist").and_then(|v| v.as_str()) { metadata.artist = Some(a.to_string()); }
-    if let Some(a) = raw.get("Album").and_then(|v| v.as_str()) { metadata.album = Some(a.to_string()); }
-    if let Some(g) = raw.get("Genre").and_then(|v| v.as_str()) { metadata.genre = Some(g.to_string()); }
-    if let Some(y) = raw.get("Year").or_else(|| raw.get("CreateDate")).and_then(|v| v.as_str()) {
+
+    if let Some(t) = raw.get("Title").and_then(|v| v.as_str()) {
+        metadata.title = Some(t.to_string());
+    }
+    if let Some(a) = raw.get("Artist").and_then(|v| v.as_str()) {
+        metadata.artist = Some(a.to_string());
+    }
+    if let Some(a) = raw.get("Album").and_then(|v| v.as_str()) {
+        metadata.album = Some(a.to_string());
+    }
+    if let Some(g) = raw.get("Genre").and_then(|v| v.as_str()) {
+        metadata.genre = Some(g.to_string());
+    }
+    if let Some(y) = raw
+        .get("Year")
+        .or_else(|| raw.get("CreateDate"))
+        .and_then(|v| v.as_str())
+    {
         metadata.year = Some(y.to_string());
     }
-    if let Some(c) = raw.get("Comment").and_then(|v| v.as_str()) { metadata.comment = Some(c.to_string()); }
+    if let Some(c) = raw.get("Comment").and_then(|v| v.as_str()) {
+        metadata.comment = Some(c.to_string());
+    }
 
     Ok(metadata)
 }
@@ -72,20 +86,38 @@ pub fn read_with_ffprobe(_file_path: &Path, _ffprobe_path: &Path) -> Result<File
     Ok(FileMetadata::default())
 }
 
-pub fn write_with_exiftool(file_path: &Path, metadata: &FileMetadata, exiftool_path: &Path) -> Result<(), String> {
+pub fn write_with_exiftool(
+    file_path: &Path,
+    metadata: &FileMetadata,
+    exiftool_path: &Path,
+) -> Result<(), String> {
     let mut cmd = std::process::Command::new(exiftool_path);
-    
-    if let Some(ref t) = metadata.title { cmd.arg(format!("-title={}", t)); }
-    if let Some(ref a) = metadata.artist { cmd.arg(format!("-artist={}", a)); }
-    if let Some(ref alb) = metadata.album { cmd.arg(format!("-album={}", alb)); }
-    if let Some(ref g) = metadata.genre { cmd.arg(format!("-genre={}", g)); }
-    if let Some(ref y) = metadata.year { cmd.arg(format!("-year={}", y)); }
-    if let Some(ref c) = metadata.comment { cmd.arg(format!("-comment={}", c)); }
-    
+
+    if let Some(ref t) = metadata.title {
+        cmd.arg(format!("-title={}", t));
+    }
+    if let Some(ref a) = metadata.artist {
+        cmd.arg(format!("-artist={}", a));
+    }
+    if let Some(ref alb) = metadata.album {
+        cmd.arg(format!("-album={}", alb));
+    }
+    if let Some(ref g) = metadata.genre {
+        cmd.arg(format!("-genre={}", g));
+    }
+    if let Some(ref y) = metadata.year {
+        cmd.arg(format!("-year={}", y));
+    }
+    if let Some(ref c) = metadata.comment {
+        cmd.arg(format!("-comment={}", c));
+    }
+
     cmd.arg("-overwrite_original");
     cmd.arg(file_path);
 
-    let status = cmd.status().map_err(|e| format!("Failed to spawn ExifTool: {}", e))?;
+    let status = cmd
+        .status()
+        .map_err(|e| format!("Failed to spawn ExifTool: {}", e))?;
     if status.success() {
         Ok(())
     } else {
@@ -93,23 +125,42 @@ pub fn write_with_exiftool(file_path: &Path, metadata: &FileMetadata, exiftool_p
     }
 }
 
-pub fn write_with_ffmpeg(file_path: &Path, metadata: &FileMetadata, ffmpeg_path: &Path) -> Result<(), String> {
+pub fn write_with_ffmpeg(
+    file_path: &Path,
+    metadata: &FileMetadata,
+    ffmpeg_path: &Path,
+) -> Result<(), String> {
     let temp_file = file_path.with_extension("temp_meta.tmp");
     let mut cmd = std::process::Command::new(ffmpeg_path);
     cmd.arg("-i").arg(file_path);
-    
-    if let Some(ref t) = metadata.title { cmd.arg("-metadata").arg(format!("title={}", t)); }
-    if let Some(ref a) = metadata.artist { cmd.arg("-metadata").arg(format!("artist={}", a)); }
-    if let Some(ref alb) = metadata.album { cmd.arg("-metadata").arg(format!("album={}", alb)); }
-    if let Some(ref g) = metadata.genre { cmd.arg("-metadata").arg(format!("genre={}", g)); }
-    if let Some(ref y) = metadata.year { cmd.arg("-metadata").arg(format!("date={}", y)); }
-    if let Some(ref c) = metadata.comment { cmd.arg("-metadata").arg(format!("comment={}", c)); }
+
+    if let Some(ref t) = metadata.title {
+        cmd.arg("-metadata").arg(format!("title={}", t));
+    }
+    if let Some(ref a) = metadata.artist {
+        cmd.arg("-metadata").arg(format!("artist={}", a));
+    }
+    if let Some(ref alb) = metadata.album {
+        cmd.arg("-metadata").arg(format!("album={}", alb));
+    }
+    if let Some(ref g) = metadata.genre {
+        cmd.arg("-metadata").arg(format!("genre={}", g));
+    }
+    if let Some(ref y) = metadata.year {
+        cmd.arg("-metadata").arg(format!("date={}", y));
+    }
+    if let Some(ref c) = metadata.comment {
+        cmd.arg("-metadata").arg(format!("comment={}", c));
+    }
 
     cmd.arg("-codec").arg("copy").arg("-y").arg(&temp_file);
 
-    let status = cmd.status().map_err(|e| format!("Failed to spawn FFmpeg: {}", e))?;
+    let status = cmd
+        .status()
+        .map_err(|e| format!("Failed to spawn FFmpeg: {}", e))?;
     if status.success() {
-        std::fs::rename(&temp_file, file_path).map_err(|e| format!("Failed to replace file: {}", e))?;
+        std::fs::rename(&temp_file, file_path)
+            .map_err(|e| format!("Failed to replace file: {}", e))?;
         Ok(())
     } else {
         let _ = std::fs::remove_file(&temp_file);
